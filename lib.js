@@ -29,7 +29,8 @@ function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE
  // 'CFS DTE'/'DTW' are depot road names, not directions
  if(!dir)for(const k of lines.slice(j,j+3)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dir={E:'Eastbound',W:'Westbound'}[z[z.length-1][2]];break}}
  // Reverser rule: bare station (no E/W/SG/DT) + Stand = train arrives in the opposite direction to the one it departs in
- let rev='';if(tok.length===1&&/\bStand\b/.test(l)){let dep=null;for(const k of lines.slice(j+1,j+6)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dep=z[0][2];break}}
+ let rev='';if(tok.length===1&&tok[0]==='CFS'&&!/\bStand\b/.test(l)&&!/^\s*Stand\b/.test(lines[j+1]||''))dir='Westbound'; // Cockfosters is a terminus: a bare CFS start departs westbound
+ if(tok.length===1&&(/\bStand\b/.test(l)||/^(\d\d:\d\d(:\d\d)? )?Stand\b/.test(lines[j+1]||''))){let dep=null;for(const k of lines.slice(j+1,j+6)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dep=z[0][2];break}}
   if(dep){rev={E:'Eastbound',W:'Westbound'}[dep];dir={E:'Westbound',W:'Eastbound'}[dep]}}
  out.push({train:m[1],time:m[2],at:place,dir:dir||'see card',rev,relief,kind:tok.some(x=>/^(SG|DT)[EW]?$/.test(x))?'Depot road / sidings':'Platform'})});return out}
 // Lenient: works with renamed copies ("RC-P26145-AGR (1).pdf", "document.pdf"), empty MIME types, and any import order.
@@ -65,6 +66,7 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
+export const PARSER_VERSION=3;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
  const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
@@ -84,7 +86,7 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
   else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
- await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);return sum}
+ await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
  return{normal:(await idb.get('kv','normal'))||[],notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
 export async function renderPages(el,pdfName,pages,width,hl){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
@@ -92,3 +94,10 @@ export async function renderPages(el,pdfName,pages,width,hl){const tok=(el._tok=
  for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
   const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;
   if(hl){const x=c.getContext('2d'),top=(v0.height-hl.y-hl.hh*0.3)*sc,hgt=hl.hh*1.35*sc;x.fillStyle='rgba(255,220,0,0.35)';x.fillRect(0,top-hgt*0.75,c.width,hgt);x.strokeStyle='#e0a800';x.lineWidth=2*sc;x.strokeRect(1,top-hgt*0.75,c.width-2,hgt)}el.appendChild(c)}}
+
+// Re-run the current parser over the PDFs already stored on this device (no re-import needed)
+export async function reparseIfOld(){const v=(await idb.get('kv','parserVersion'))||0;if(v>=PARSER_VERSION)return null;
+ const ids=await idb.keys('pdfs');if(!ids.length){await idb.put('kv','parserVersion',PARSER_VERSION);return null}
+ const files=[];for(const id of ids){const b=await idb.get('pdfs',id);if(b)files.push(new File([b],id,{type:'application/pdf'}))}
+ // normal books first is not required; RC/compact keyed by notice, books keyed by id
+ return importPdfs(files)}

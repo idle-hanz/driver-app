@@ -1,4 +1,4 @@
-import {idb,wipe,importCsvs,importPdfs,loadData,renderPages} from './lib.js';
+import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
 const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,ready:5,tt:'',
@@ -125,5 +125,6 @@ $('#fDir').onchange=async e=>{const all=[...e.target.files],csv=all.filter(f=>/\
  let c={pack:0,dut:0};try{c=await importCsvs(csv);await reload()}catch(err){}
  await doPdfs(pdf,`${csv.length} CSVs read (${c.dut} duties). `);e.target.value=''};
 $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties, hours and settings from this phone?'))return;await wipe();localStorage.clear();location.reload()};
-reload().then(()=>{const w=new URLSearchParams(location.search).get('week');if(w)$('#wk').value=w;weekView();cardView()});
+function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
+reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');if(w)$('#wk').value=w;weekView();cardView()});
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js');navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
