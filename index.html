@@ -1,0 +1,31 @@
+<!doctype html><html lang="en-GB"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AGR Driver</title><link rel="manifest" href="manifest.webmanifest"><meta name="theme-color" content="#003688"><link rel="icon" href="icon-192.png"><link rel="stylesheet" href="style.css"></head><body>
+<header>AGR Driver · Piccadilly</header>
+<nav><button data-t="week" class="on">Week</button><button data-t="card">Running card</button><button data-t="trains">Trains</button><button data-t="pace">Pacing</button><button data-t="hours">Hours</button><button data-t="set">Settings</button></nav>
+<main>
+<section id="week" class="on"><div class="card"><label>Week starting (Sunday)</label><input type="date" id="wk">
+<div id="days"></div><button class="b" id="saveWeek">Save week</button>
+<label>Or load duties from your own file (CSV: date,duty — e.g. 2026-10-18,431)</label><input type="file" id="dutyFile" accept=".csv,.txt">
+<p class="muted" id="wkMsg"></p></div></section>
+<section id="card"><div class="card"><label>Day</label><select id="cardDay"></select><div id="cardInfo"></div></div><div id="cardPages"></div></section>
+<section id="trains"><div class="card"><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button>
+<p class="muted">Live TfL arrivals. Information only — your pick up time is always the time on the running card.</p><div id="tlist"></div></div></section>
+<section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
+<button class="b" id="drive">Drive to work</button><button class="b s" id="alarmBtn">Set lie-down alarm</button><button class="b s" id="leaveAlarm">Set leave-by alarm</button></div>
+<div class="card"><b>Suggested rest places</b><ul id="rest"></ul><span class="muted">Edit the list in Settings.</span></div></section>
+<section id="hours"><div class="card"><label>Date</label><input type="date" id="hDate"><label>Duty</label><input id="hDuty" inputmode="numeric">
+<label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
+<label>Train number taken to book-off point</label><input id="hTrain" inputmode="numeric"><label>Notes</label><input id="hNote">
+<button class="b" id="hAdd">Add to log</button><button class="b s" id="hCsv">Export CSV</button></div><div class="card"><table id="hTab"></table></div></section>
+<section id="set"><div class="card"><b>My files (stay on this phone only)</b>
+<label>Notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" accept=".csv,text/csv" multiple>
+<label>Duty book PDFs: RC-P26xxx-AGR.pdf and P26xxx-AGR.pdf (select several)</label><input type="file" id="fPdf" accept=".pdf,application/pdf" multiple>
+<p class="muted" id="impMsg"></p><p class="muted" id="dataSummary"></p><button class="b s" id="clearData">Clear my data</button></div><div class="card">
+<label>Depot address / destination for Maps (not confirmed — entrance thought to be off Palmers Road)</label><input id="sDepot">
+<label>Depot lat,lon (for TomTom; optional)</label><input id="sDepotLL"><label>Home lat,lon (for TomTom; optional)</label><input id="sHomeLL">
+<label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">
+<label>Lie-down length before leaving (minutes)</label><input id="sLie" type="number">
+<label>TomTom API key (optional, free tier — stays on this phone)</label><input id="sTT">
+<label>Rest places (one per line)</label><textarea id="sRest" rows="5"></textarea>
+<button class="b" id="saveSet">Save settings</button><p class="muted" id="setMsg"></p></div></section>
+</main><script type="module" src="app.js"></script></body></html>

@@ -1,0 +1,7 @@
+data/
+cards/
+*.pdf
+*.csv
+*.json
+!manifest.webmanifest
+node_modules/
