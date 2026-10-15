@@ -21,8 +21,9 @@ export async function importCsvs(files){const st=(await idb.get('kv','notices'))
     n.duties[r.duty]=Object.fromEntries(KEEP.map(k=>[k,r[k]||'']));dut++}}}
  await idb.put('kv','notices',st);return{pack,dut}}
 async function pageLines(page){const tc=await page.getTextContent(),rows=[];
- for(const it of tc.items){if(!it.str.trim())continue;const y=it.transform[5],x=it.transform[4];let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r)rows.push(r={y,items:[]});r.items.push({x,w:it.width,s:it.str})}
- return rows.sort((a,b)=>b.y-a.y).map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim())}
+ for(const it of tc.items){if(!it.str.trim())continue;const y=it.transform[5],x=it.transform[4];let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r)rows.push(r={y,hh:0,items:[]});r.hh=Math.max(r.hh,it.height||0);r.items.push({x,w:it.width,s:it.str})}
+ rows.sort((a,b)=>b.y-a.y);const out=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim());
+ out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.ph=page.view[3];return out}
 const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?\b)?)/;
 function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE);if(!m)return;let place=m[3],tok=place.split(' '),dir={E:'Eastbound',W:'Westbound'}[tok[tok.length-1]];
  // 'CFS DTE'/'DTW' are depot road names, not directions
@@ -42,12 +43,23 @@ export function dayTypeDays(dt){const out=new Set();for(const part of dt.split('
  const a=WD[r[1]],b=r[2]&&r[2] in WD?WD[r[2]]:a;for(let d=a;;d=(d+1)%7){out.add(d);if(d===b)break}}return[...out].sort()}
 const MON={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
 function isoFrom(d,m,y){return`${y}-${String(MON[m.toLowerCase()]).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
+const COVER_ROW=/^(\d{3}) (\d\d:\d\d) ([A-Z]{2,4}) (.+?) (\d\d:\d\d) ?(\*|[A-Z]{2,4}(?: DT)?)? (\d\d:\d\d)$/;
+function coverTable(lines,pi){const out=[];let note='';for(const l of lines){const n=l.match(/^\*:?\s*(These.*may finish.*)$/i);if(n&&!note)note=n[1]}
+ lines.forEach((l,j)=>{const m=l.match(COVER_ROW);if(!m)return;let desc=m[4];const nx=lines[j+1]||'';if(/^and\/or /i.test(nx))desc+=' '+nx;
+  out.push({duty:m[1],on:m[2],from:m[3],desc,finish:m[5],finishAt:m[6]||'',length:m[7],note:m[6]==='*'?note:'',pages:[pi+1],hl:{y:lines.hl[j].y,hh:lines.hl[j].hh,ph:lines.ph},cover:true,pickups:[]})});return out}
 function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ');
  const v=first.match(/From (\d{1,2}) ([A-Za-z]+) (\d{4}) until (\d{1,2}) ([A-Za-z]+) (\d{4})/i),tn=first.match(/Notice (\d{2,4})/i);
- const duties=[];pages.forEach((lines,pi)=>{let cur=null;for(const l of lines){const m=l.match(/^Duty:\s*(\d{3}) (.+?) Duty Length:\s*(\d\d:\d\d)/);
-  if(m){cur={duty:m[1],dt:m[2].trim(),days:dayTypeDays(m[2]),length:m[3],pages:[pi+1],lines:[]};duties.push(cur);continue}if(cur)cur.lines.push(l)}});
- for(const d of duties){const t=d.lines.join('\n');d.on=(t.match(/On:\s*(\d\d:\d\d)/)||[])[1]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';d.pickups=pickups(d.lines);delete d.lines}
- return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length)}}
+ const duties=[],covers=[];pages.forEach((lines,pi)=>{let cur=null;for(const l of lines){const m=l.match(/^Duty:\s*(\d{3}) (.+?) Duty Length:\s*(\d\d:\d\d)/);
+  if(m){cur={duty:m[1],dt:m[2].trim(),days:dayTypeDays(m[2]),length:m[3],pages:[pi+1],lines:[]};duties.push(cur);continue}if(cur)cur.lines.push(l)}
+  if(lines.some(l=>/^Cover Duties$/i.test(l))){for(const c of coverTable(lines,pi)){c.tablePage=pi+1;covers.push(c)}}});
+ // A cover table belongs to the book section it ends: its weekdays = all duty headers since the previous cover table
+ let prev=0;const tpages=[...new Set(covers.map(c=>c.tablePage))].sort((a,b)=>a-b),secDays={};
+ for(const tp of tpages){const cnt=[0,0,0,0,0,0,0];for(const d of duties)if(d.pages[0]>prev&&d.pages[0]<=tp)d.days.forEach(x=>cnt[x]++);const mx=Math.max(...cnt);secDays[tp]=cnt.map((c,i)=>c>=mx/2&&c>0?i:-1).filter(i=>i>=0);prev=tp}
+ const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+ for(const c of covers){c.days=secDays[c.tablePage]||[];c.dt='Cover duty ('+(c.days.length>1?DN[c.days[0]]+' - '+DN[c.days[c.days.length-1]]:DN[c.days[0]]||'?')+')';delete c.tablePage}
+ for(const d of duties){const t=d.lines.join('\n');d.on=(t.match(/On:\s*(\d\d:\d\d)/)||[])[1]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';
+  const fm=t.match(/Finish:\s*\S+ \*/),nt=t.match(/\*:?\s*(This duty may finish[^\n]*)/i);if(fm&&nt)d.note=nt[1];if(/Spare Day on the Rota/i.test(t))d.spare=true;d.pickups=pickups(d.lines);delete d.lines}
+ return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
@@ -61,18 +73,19 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   await doc.destroy();
   if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
    const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf);books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
-   const types=[...new Set(nb.duties.map(d=>d.dt))];sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length} duties, day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
+   const types=[...new Set(nb.duties.filter(d=>!d.cover).map(d=>d.dt))],nc=nb.duties.filter(d=>d.cover).length;sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length-nc} duty cards + ${nc} cover duties (${[...new Set(nb.duties.filter(d=>d.cover).map(d=>d.dt))].join(', ')}), day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
   const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],lines:l}:null}).filter(Boolean);
   const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
   if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
   const id=(isRc?'RC-':'C-')+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
   if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
-  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]]){compact[key][d[1]]={pdf:id,page:i+1};sum.compactPages++}}})}
+  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
  await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
  return{normal:(await idb.get('kv','normal'))||[],notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
-export async function renderPages(el,pdfName,pages,width){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
+export async function renderPages(el,pdfName,pages,width,hl){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
  const doc=await pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;if(tok!==el._tok)return;el.innerHTML='';
  for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
-  const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;el.appendChild(c)}}
+  const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;
+  if(hl){const x=c.getContext('2d'),top=(v0.height-hl.y-hl.hh*0.3)*sc,hgt=hl.hh*1.35*sc;x.fillStyle='rgba(255,220,0,0.35)';x.fillRect(0,top-hgt*0.75,c.width,hgt);x.strokeStyle='#e0a800';x.lineWidth=2*sc;x.strokeRect(1,top-hgt*0.75,c.width-2,hgt)}el.appendChild(c)}}

@@ -15,10 +15,10 @@ const duties=()=>LS.get('duties',{}); // {date: duty}
 // Running card pick: notice whose published dates include this date -> engineering card, else normal book
 function resolve(date){const duty=duties()[date];if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:'Rest/other',notice:'',times:null,card:null};
  for(const n of DATA.notices){if(n.dates.includes(date)){const d=n.duties[duty];
-   if(d||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d||null,card:(DATA.cards[n.notice]||{})[duty]||null,compact:(DATA.compact[n.notice]||{})[duty]||null}}}
+   if(d||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d||null,cover:!!(d&&d.section==='cover'),spare:!!(d&&d.section==='spare'),card:(DATA.cards[n.notice]||{})[duty]||null,compact:(DATA.compact[n.notice]||{})[duty]||null}}}
  const wd=new Date(date+'T12:00:00').getDay();let best=null,book=null;
- for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length;if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
- if(best)return{date,duty,type:'Normal',notice:`Duty book ${book.timetable} · ${best.dt}`+(best.inRange?'':' (outside book dates!)'),times:{sign_on:best.on,length:best.length,sign_off:best.finish},card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups}};
+ for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length*2+(d.cover?1:0);if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
+ if(best)return{date,duty,type:'Normal',notice:`Duty book ${book.timetable} · ${best.dt}`+(best.inRange?'':' (outside book dates!)'),times:{sign_on:best.on,length:best.length,sign_off:best.finish+(best.finishAt&&best.finishAt!=='*'?' '+best.finishAt:best.finishAt==='*'?' *':'')},cover:!!best.cover,spare:!!best.spare,note:best.note||'',desc:best.desc||'',card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups,hl:best.hl}};
  return{date,duty,type:'Normal',notice:'Normal duty book',times:null,card:null}}
 function weekView(){const s=$('#wk').value||sunday(today());$('#wk').value=s;const du=duties();let h='';
  for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d);
@@ -35,12 +35,13 @@ $('#dutyFile').onchange=async e=>{const t=await e.target.files[0].text(),du=duti
 function cardView(){const r=resolve($('#cardDay').value);if(!r){$('#cardInfo').innerHTML='<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b> · ${esc(r.notice)}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
+ if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+='<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
  if(r.card&&r.card.pickups.length)h+='<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+r.card.pickups.map(p=>`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.dir}</td><td>${p.kind}</td></tr>`).join('')+'</table>';
  if(r.type==='Normal'&&!r.card)h+=(DATA.normal&&DATA.normal.length)?'<p class="err">Duty '+esc(r.duty)+' is not in the normal duty book for this weekday.</p>':'<p class="err">This is a normal-timetable day. Import the normal duty book PDF (e.g. "Arnos Grove Duty Book 132…pdf") in Settings to see its running card.</p>';
- else if(!r.card)h+=r.compact?'<p class="muted">No RC page for this duty. Showing the compact notice page.</p>':'<p class="muted">No running card page imported for this duty.</p>';
+ else if(!r.card)h+=r.compact?'<p class="muted">No RC page for this duty. Showing the compact notice page (row highlighted).</p>':'<p class="muted">No running card page imported for this duty.</p>';
  $('#cardInfo').innerHTML=h;const el=$('#cardPages');el.innerHTML='';const w=el.clientWidth||Math.min(innerWidth,800)-24;
  const fail=e=>{el.innerHTML='<p class="err">Could not draw the card: '+esc(e&&e.message||e)+'</p>'};
- if(r.card)renderPages(el,r.card.pdf,r.card.pages,w).catch(fail);else if(r.compact)renderPages(el,r.compact.pdf,[r.compact.page],w).catch(fail)}
+ if(r.card)renderPages(el,r.card.pdf,r.card.pages,w,r.card.hl).catch(fail);else if(r.compact)renderPages(el,r.compact.pdf,[r.compact.page],w,r.compact.hl).catch(fail)}
 function browseFill(){const ns=Object.keys(DATA.cards).sort();$('#bNotice').innerHTML='<option value="">—</option>'+ns.map(n=>`<option>${n}</option>`).join('');$('#bDuty').innerHTML=''}
 $('#bNotice').onchange=()=>{const c=DATA.cards[$('#bNotice').value]||{};$('#bDuty').innerHTML='<option value="">—</option>'+Object.keys(c).sort().map(d=>`<option>${d}</option>`).join('')};
 $('#bDuty').onchange=()=>{const n=$('#bNotice').value,d=$('#bDuty').value,c=(DATA.cards[n]||{})[d];if(!c)return;const nn=DATA.notices.find(x=>x.notice===n),t=nn&&nn.duties[d];
@@ -58,6 +59,7 @@ const CODE={AGR:'940GZZLUASG',CFS:'940GZZLUCKS',OAK:'940GZZLUOAK',SGT:'940GZZLUS
 const normV=v=>String(v||'').replace(/^0+/,'');let trTimer=null;
 async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#trains.on'))return;
  const date=$('#trDay').value,r=resolve(date);
+ if(r&&(r.cover||r.spare)){out.innerHTML=`<p><b>${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</b> — no booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
  if(!r||!r.card||!r.card.pickups.length){out.innerHTML='<p class="muted">'+(r?'No pick-ups known for this duty (needs its running card PDF).':'No duty entered for this day.')+'</p>';return}
  let all=null,err='';try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){err='No live data (offline?).'}
  const now=Date.now(),isToday=date===today();
