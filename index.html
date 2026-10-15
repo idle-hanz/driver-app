@@ -8,8 +8,8 @@
 <label>Or load duties from your own file (CSV: date,duty — e.g. 2026-10-18,431)</label><input type="file" id="dutyFile" accept=".csv,.txt">
 <p class="muted" id="wkMsg"></p></div></section>
 <section id="card"><div class="card"><label>Day</label><select id="cardDay"></select><div id="cardInfo"></div><details id="browse"><summary>Look up any running card on this phone</summary><label>Notice</label><select id="bNotice"></select><label>Duty</label><select id="bDuty"></select></details></div><div id="cardPages"></div></section>
-<section id="trains"><div class="card"><b>My pick-up trains</b><label>Day</label><select id="trDay"></select><div id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p></div><div class="card"><b>All arrivals</b><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button>
-<p class="muted">Live TfL arrivals. Information only — your pick up time is always the time on the running card.</p><div id="tlist"></div></div></section>
+<section id="trains"><div class="card" id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p>
+<details class="card" id="allTrains"><summary>All trains</summary><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button><div id="tlist"></div></details></section>
 <section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
 <button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm (at depot)</button></div>
 <div class="card"><b>Suggested rest places</b><ul id="rest"></ul><span class="muted">Edit the list in Settings.</span></div></section>

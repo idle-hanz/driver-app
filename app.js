@@ -26,7 +26,7 @@ function weekView(){const s=$('#wk').value||sunday(today());$('#wk').value=s;con
   <div>${r?`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${esc(r.notice)}${r.times?` · On ${r.times.sign_on} · Off ${r.times.sign_off}`:''}`:''}</div></div>`}
  $('#days').innerHTML=h;fillDays()}
 function fillDays(){const s=$('#wk').value,o=[...Array(7)].map((_,i)=>{const d=addD(s,i);return`<option value="${d}">${DAYS[i]} ${d} — ${esc(duties()[d]||'no duty')}</option>`}).join('');
- for(const id of['#cardDay','#paceDay','#trDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
+ for(const id of['#cardDay','#paceDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
 $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=i.value.trim();if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
 $('#wk').onchange=weekView;
 $('#dutyFile').onchange=async e=>{const t=await e.target.files[0].text(),du=duties();let n=0;
@@ -57,26 +57,37 @@ $('#refT').onclick=trains;
 // --- Track my pick-up train (TfL vehicleId = train/set number on LU) ---
 const CODE={AGR:'940GZZLUASG',CFS:'940GZZLUCKS',OAK:'940GZZLUOAK',SGT:'940GZZLUSGT',BDS:'940GZZLUBDS',WGN:'940GZZLUWOG',TPL:'940GZZLUTPN',MNR:'940GZZLUMRH',FPK:'940GZZLUFPK',KXX:'940GZZLUKSX',HBN:'940GZZLUHBN',LSQ:'940GZZLULSQ',PCC:'940GZZLUPCC',HPC:'940GZZLUHPC',KNB:'940GZZLUKNB',SKN:'940GZZLUSKS',ECT:'940GZZLUECT',HMD:'940GZZLUHSD',ACT:'940GZZLUACT',NFD:'940GZZLUNFD',HNE:'940GZZLUHNX',HRC:'940GZZLUHRC',HRV:'940GZZLUHR4',HRF:'940GZZLUHR5',RLN:'940GZZLURYL',UXB:'940GZZLUUXB',ALP:'940GZZLUALP',ECM:'940GZZLUECM'};
 const normV=v=>String(v||'').replace(/^0+/,'');let trTimer=null;
+const NOW=()=>{const q=new URLSearchParams(location.search).get('now');return q?new Date(q):new Date()};
+let trSel=null;
 async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#trains.on'))return;
- const date=$('#trDay').value,r=resolve(date);
- if(r&&(r.cover||r.spare)){out.innerHTML=`<p><b>${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</b> — no booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
- if(!r||!r.card||!r.card.pickups.length){out.innerHTML='<p class="muted">'+(r?'No pick-ups known for this duty (needs its running card PDF).':'No duty entered for this day.')+'</p>';return}
- let all=null,err='';try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){err='No live data (offline?).'}
- const now=Date.now(),isToday=date===today();
- out.innerHTML=(err?`<p class="err">${err}</p>`:'')+r.card.pickups.map(p=>{
-  const booked=new Date(`${date}T${p.time}:00`),past=isToday&&now-booked>15*60e3,h=`<p><b>Train ${p.train}</b> · pick up <b>${p.time}</b> at ${esc(p.at)} · ${p.rev?'Reverser (arrives '+p.dir+', departs '+p.rev+')':p.dir} · ${p.kind}</p>`;
-  if(!all)return h;if(past)return h+'<p class="muted">Pick-up time has passed.</p>';
-  const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation);
-  if(!preds.length)return h+`<p class="muted">${!isToday?'Live tracking only works on the day.':booked-now>3600e3?'Not running yet / too far ahead. Will keep checking every 30 s.':p.kind!=='Platform'?'Not in TfL arrivals (it starts from the depot road). Will keep checking every 30 s.':'Not found in TfL arrivals right now. Will keep checking every 30 s.'}</p>`;
-  const naptan=CODE[p.at.split(' ')[0]],dirWord=p.dir.startsWith('East')?'Eastbound':p.dir.startsWith('West')?'Westbound':'';
-  const atPick=preds.find(a=>a.naptanId===naptan&&(!dirWord||(a.platformName||'').startsWith(dirWord)));
-  let x=h+`<p>Now: <b>${esc(preds[0].currentLocation||'—')}</b> → ${esc(preds[0].towards||preds[0].destinationName||'')}</p><p class="muted">Next: ${preds.slice(0,4).map(a=>esc(a.stationName.replace(' Underground Station',''))+' '+new Date(a.expectedArrival).toTimeString().slice(0,5)).join(' · ')}</p>`;
-  if(atPick&&Math.abs(new Date(atPick.expectedArrival)-booked)>40*60e3){x+=`<p class="muted">Train ${p.train} is on an earlier/other trip (due at your platform ${new Date(atPick.expectedArrival).toTimeString().slice(0,5)}). Your ${p.time} pick-up is not predicted yet.</p>`}
-  else if(atPick){const exp=new Date(atPick.expectedArrival),diff=Math.round((exp-booked)/60000);
-   x+=`<p>Expected at ${esc(atPick.platformName)}: <b>${exp.toTimeString().slice(0,5)}</b> — <span class="tag ${Math.abs(diff)>=2?'eng':''}">${diff===0?'on time':diff>0?diff+' min late':(-diff)+' min early'}</span> <span class="muted">(info only)</span></p>`}
-  else x+='<p class="muted">Not yet predicted at your pick-up platform.</p>';return x}).join('<hr>');
- trTimer=setTimeout(myTrains,30000)}
-$('#trDay').onchange=myTrains;
+ const nowD=NOW(),now=+nowD,date=`${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}-${String(nowD.getDate()).padStart(2,'0')}`,r=resolve(date);
+ const head=`<p class="muted">Today ${DAYS[nowD.getDay()]} ${date.slice(8)}/${date.slice(5,7)}${r?' · duty '+esc(r.duty):''}</p>`;
+ if(r&&(r.cover||r.spare)){out.innerHTML=head+`<p class="big">${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</p><p>No booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
+ if(!r){out.innerHTML=head+'<p class="big">No duty set for today</p><p class="muted">Enter today\'s duty on the Week tab.</p>';return}
+ if(!r.card||!r.card.pickups.length){out.innerHTML=head+'<p class="big">No pick-ups known</p><p class="muted">This duty\'s running card is not on this device. Import it in Settings.</p>';return}
+ const ps=r.card.pickups,on=t2m(r.times&&r.times.sign_on||ps[0].time);
+ const at=t=>{const d=new Date(`${date}T${t}:00`);if(t2m(t)<on-60)d.setDate(d.getDate()+1);return d};
+ const end=(p,i)=>p.relief?at(p.relief):ps[i+1]?at(ps[i+1].time):new Date(+at(p.time)+4*3600e3);
+ let cur=ps.findIndex((p,i)=>now<end(p,i));const auto=cur;if(trSel!==null&&ps[trSel])cur=trSel;
+ const sel=`<div class="pick">${ps.map((p,i)=>`<button data-i="${i}" class="${i===cur?'on':''}">${p.train} · ${p.time}${i===auto?' (now)':''}</button>`).join('')}${trSel!==null?'<button data-i="auto">Follow current</button>':''}</div>`;
+ if(cur<0){out.innerHTML=head+'<p class="big">All pick-ups done</p><p class="muted">Last relief has passed.</p>'+sel;bindSel();return}
+ const p=ps[cur],booked=at(p.time),working=now>=+booked,rel=p.relief?` · relieved ${p.relief}`:'';
+ const dirTxt=p.rev?`Reverser (arrives ${p.dir}, departs ${p.rev})`:`${p.dir}`;
+ let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;
+ let all=null;try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){h+='<p class="err">No live data (offline?).</p>'}
+ if(all){const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation),T=`<span class="tno">${esc(p.train)}</span>`;
+  if(!preds.length)h+=`<p>${T}${booked-now>3600e3?'Not running yet / too far ahead.':p.kind!=='Platform'&&!working?'Not in TfL arrivals yet (starts from the depot road).':'Not found in TfL arrivals right now.'} Checking again every 30 s.</p>`;
+  else{h+=`<p>${T}Now: <b>${esc(preds[0].currentLocation||'—')}</b> → ${esc(preds[0].towards||preds[0].destinationName||'')}</p>`+preds.filter((a,i,l)=>l.findIndex(b=>b.naptanId===a.naptanId)===i).slice(0,4).map(a=>`<p class="muted">${T}${esc(a.stationName.replace(' Underground Station',''))} ${new Date(a.expectedArrival).toTimeString().slice(0,5)} · ${esc(a.platformName||'')}</p>`).join('');
+   if(!working){const naptan=CODE[p.at.split(' ')[0]],dw=p.dir.startsWith('East')?'Eastbound':p.dir.startsWith('West')?'Westbound':'';
+    const ap=preds.find(a=>a.naptanId===naptan&&(!dw||(a.platformName||'').startsWith(dw)));
+    if(ap&&Math.abs(new Date(ap.expectedArrival)-booked)<=40*60e3){const exp=new Date(ap.expectedArrival),diff=Math.round((exp-booked)/60000);
+     h+=`<p>${T}Expected at ${esc(ap.platformName)}: <b class="big">${exp.toTimeString().slice(0,5)}</b> <span class="tag ${Math.abs(diff)>=2?'eng':''}">${diff===0?'on time':diff>0?diff+' min late':(-diff)+' min early'}</span> <span class="muted">(info only)</span></p>`}
+    else if(ap)h+=`<p class="muted">${T}is on an earlier trip (due at your platform ${new Date(ap.expectedArrival).toTimeString().slice(0,5)}). Your ${p.time} pick-up is not predicted yet.</p>`;
+    else h+=`<p class="muted">${T}not yet predicted at your pick-up platform.</p>`}}}
+ out.innerHTML=h+'<p class="muted" style="margin-top:12px">Other pick-ups on this duty:</p>'+sel;bindSel();trTimer=setTimeout(myTrains,30000)}
+function bindSel(){document.querySelectorAll('#myTrains .pick button').forEach(b=>b.onclick=()=>{trSel=b.dataset.i==='auto'?null:+b.dataset.i;myTrains()})}
+$('#allTrains').addEventListener('toggle',()=>{if($('#allTrains').open)trains()});
+
 $('#stn').onchange=trains;
 async function journeyMin(){if(S.tt&&S.homeLL&&S.depotLL){try{const r=await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${S.homeLL}:${S.depotLL}/json?traffic=true&key=${encodeURIComponent(S.tt)}`);const j=await r.json();return{m:Math.ceil(j.routes[0].summary.travelTimeInSeconds/60),src:'TomTom live traffic'}}catch(e){}}return{m:+S.journey,src:'usual journey time'}}
 let lastPace=null;
@@ -101,7 +112,7 @@ const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
- ({card:cardView,trains:()=>{trains();myTrains()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
+ ({card:cardView,trains:()=>{trSel=null;myTrains()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=async e=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''};
