@@ -28,7 +28,7 @@ const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?
 function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE);if(!m)return;let place=m[3],tok=place.split(' '),dir={E:'Eastbound',W:'Westbound'}[tok[tok.length-1]];
  // 'CFS DTE'/'DTW' are depot road names, not directions
  if(!dir)for(const k of lines.slice(j,j+3)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dir={E:'Eastbound',W:'Westbound'}[z[z.length-1][2]];break}}
- // Reversing rule: bare station (no E/W/SG/DT) + Stand = train arrives in the opposite direction to the one it departs in
+ // Reverser rule: bare station (no E/W/SG/DT) + Stand = train arrives in the opposite direction to the one it departs in
  let rev='';if(tok.length===1&&/\bStand\b/.test(l)){let dep=null;for(const k of lines.slice(j+1,j+6)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dep=z[0][2];break}}
   if(dep){rev={E:'Eastbound',W:'Westbound'}[dep];dir={E:'Westbound',W:'Eastbound'}[dep]}}
  out.push({train:m[1],time:m[2],at:place,dir:dir||'see card',rev,kind:tok.some(x=>/^(SG|DT)[EW]?$/.test(x))?'Depot road / sidings':'Platform'})});return out}
