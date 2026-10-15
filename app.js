@@ -59,14 +59,15 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
  let all=null,err='';try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){err='No live data (offline?).'}
  const now=Date.now(),isToday=date===today();
  out.innerHTML=(err?`<p class="err">${err}</p>`:'')+r.card.pickups.map(p=>{
-  const booked=new Date(`${date}T${p.time}:00`),h=`<p><b>Train ${p.train}</b> · pick up <b>${p.time}</b> at ${esc(p.at)} · ${p.dir} · ${p.kind}</p>`;
-  if(!all)return h;
+  const booked=new Date(`${date}T${p.time}:00`),past=isToday&&now-booked>15*60e3,h=`<p><b>Train ${p.train}</b> · pick up <b>${p.time}</b> at ${esc(p.at)} · ${p.dir} · ${p.kind}</p>`;
+  if(!all)return h;if(past)return h+'<p class="muted">Pick-up time has passed.</p>';
   const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation);
   if(!preds.length)return h+`<p class="muted">${!isToday?'Live tracking only works on the day.':booked-now>3600e3?'Not running yet / too far ahead. Will keep checking every 30 s.':p.kind!=='Platform'?'Not in TfL arrivals (it starts from the depot road). Will keep checking every 30 s.':'Not found in TfL arrivals right now. Will keep checking every 30 s.'}</p>`;
   const naptan=CODE[p.at.split(' ')[0]],dirWord=p.dir.startsWith('East')?'Eastbound':p.dir.startsWith('West')?'Westbound':'';
   const atPick=preds.find(a=>a.naptanId===naptan&&(!dirWord||(a.platformName||'').startsWith(dirWord)));
   let x=h+`<p>Now: <b>${esc(preds[0].currentLocation||'—')}</b> → ${esc(preds[0].towards||preds[0].destinationName||'')}</p><p class="muted">Next: ${preds.slice(0,4).map(a=>esc(a.stationName.replace(' Underground Station',''))+' '+new Date(a.expectedArrival).toTimeString().slice(0,5)).join(' · ')}</p>`;
-  if(atPick){const exp=new Date(atPick.expectedArrival),diff=Math.round((exp-booked)/60000);
+  if(atPick&&Math.abs(new Date(atPick.expectedArrival)-booked)>40*60e3){x+=`<p class="muted">Train ${p.train} is on an earlier/other trip (due at your platform ${new Date(atPick.expectedArrival).toTimeString().slice(0,5)}). Your ${p.time} pick-up is not predicted yet.</p>`}
+  else if(atPick){const exp=new Date(atPick.expectedArrival),diff=Math.round((exp-booked)/60000);
    x+=`<p>Expected at ${esc(atPick.platformName)}: <b>${exp.toTimeString().slice(0,5)}</b> — <span class="tag ${Math.abs(diff)>=2?'eng':''}">${diff===0?'on time':diff>0?diff+' min late':(-diff)+' min early'}</span> <span class="muted">(info only)</span></p>`}
   else x+='<p class="muted">Not yet predicted at your pick-up platform.</p>';return x}).join('<hr>');
  trTimer=setTimeout(myTrains,30000)}
