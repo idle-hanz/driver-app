@@ -7,24 +7,25 @@
 <div id="days"></div><button class="b" id="saveWeek">Save week</button>
 <label>Or load duties from your own file (CSV: date,duty — e.g. 2026-10-18,431)</label><input type="file" id="dutyFile" accept=".csv,.txt">
 <p class="muted" id="wkMsg"></p></div></section>
-<section id="card"><div class="card"><label>Day</label><select id="cardDay"></select><div id="cardInfo"></div></div><div id="cardPages"></div></section>
-<section id="trains"><div class="card"><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button>
+<section id="card"><div class="card"><label>Day</label><select id="cardDay"></select><div id="cardInfo"></div><details id="browse"><summary>Look up any running card on this phone</summary><label>Notice</label><select id="bNotice"></select><label>Duty</label><select id="bDuty"></select></details></div><div id="cardPages"></div></section>
+<section id="trains"><div class="card"><b>My pick-up trains</b><label>Day</label><select id="trDay"></select><div id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p></div><div class="card"><b>All arrivals</b><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button>
 <p class="muted">Live TfL arrivals. Information only — your pick up time is always the time on the running card.</p><div id="tlist"></div></div></section>
 <section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
-<button class="b" id="drive">Drive to work</button><button class="b s" id="alarmBtn">Set lie-down alarm</button><button class="b s" id="leaveAlarm">Set leave-by alarm</button></div>
+<button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm (at depot)</button></div>
 <div class="card"><b>Suggested rest places</b><ul id="rest"></ul><span class="muted">Edit the list in Settings.</span></div></section>
 <section id="hours"><div class="card"><label>Date</label><input type="date" id="hDate"><label>Duty</label><input id="hDuty" inputmode="numeric">
 <label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
 <label>Train number taken to book-off point</label><input id="hTrain" inputmode="numeric"><label>Notes</label><input id="hNote">
 <button class="b" id="hAdd">Add to log</button><button class="b s" id="hCsv">Export CSV</button></div><div class="card"><table id="hTab"></table></div></section>
 <section id="set"><div class="card"><b>My files (stay on this phone only)</b>
-<label>Notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" accept=".csv,text/csv" multiple>
-<label>Duty book PDFs: RC-P26xxx-AGR.pdf and P26xxx-AGR.pdf (select several)</label><input type="file" id="fPdf" accept=".pdf,application/pdf" multiple>
+<label><b>Easiest:</b> pick the whole folder (e.g. "Driver App Phone Files") — CSVs and PDFs are imported together</label><input type="file" id="fDir" webkitdirectory multiple>
+<label>Or notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" multiple>
+<label>Duty book PDFs: RC-P26xxx-AGR.pdf <b>and</b> P26xxx-AGR.pdf (select several — Ctrl+A in the file window)</label><input type="file" id="fPdf" multiple>
 <p class="muted" id="impMsg"></p><p class="muted" id="dataSummary"></p><button class="b s" id="clearData">Clear my data</button></div><div class="card">
 <label>Depot address / destination for Maps (not confirmed — entrance thought to be off Palmers Road)</label><input id="sDepot">
 <label>Depot lat,lon (for TomTom; optional)</label><input id="sDepotLL"><label>Home lat,lon (for TomTom; optional)</label><input id="sHomeLL">
 <label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">
-<label>Lie-down length before leaving (minutes)</label><input id="sLie" type="number">
+<label>Lie-down at the depot before sign-on (minutes)</label><input id="sLie" type="number"><label>Get-ready buffer: wake this many minutes before sign-on</label><input id="sReady" type="number">
 <label>TomTom API key (optional, free tier — stays on this phone)</label><input id="sTT">
 <label>Rest places (one per line)</label><textarea id="sRest" rows="5"></textarea>
 <button class="b" id="saveSet">Save settings</button><p class="muted" id="setMsg"></p></div></section>

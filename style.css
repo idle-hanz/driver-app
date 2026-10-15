@@ -6,3 +6,4 @@ input,select,textarea{font:inherit;padding:8px;border-radius:6px;border:1px soli
 button.b{background:#dc241f;color:#fff;border:0;border-radius:8px;padding:12px 14px;font-size:16px;margin:6px 4px 0 0}button.s{background:#2a3570}
 .tag{display:inline-block;padding:2px 6px;border-radius:4px;font-size:12px;background:#2a3570;margin-right:4px}.eng{background:#a35400}.big{font-size:32px;font-weight:700}
 .rc{display:block;margin-bottom:8px;width:100%;background:#fff;border-radius:4px}table{width:100%;border-collapse:collapse}td,th{padding:4px;border-bottom:1px solid #334;text-align:left;font-size:14px}.muted{color:#9ab;font-size:13px}
+.err{color:#ffb4ab;background:#3a1010;padding:8px;border-radius:6px}.ok{color:#b6f2c0}summary{margin-top:10px;color:#9cf}

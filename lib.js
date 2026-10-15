@@ -28,19 +28,33 @@ function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE
  // 'CFS DTE'/'DTW' are depot road names, not directions
  if(!dir)for(const k of lines.slice(j,j+3)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dir={E:'Eastbound',W:'Westbound'}[z[z.length-1][2]];break}}
  out.push({train:m[1],time:m[2],at:place,dir:dir||'see card',kind:tok.some(x=>/^(SG|DT)[EW]?$/.test(x))?'Depot road / sidings':'Platform'})});return out}
-export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{};let n=0;
- for(const f of files){const m=f.name.match(/P26(\d{3})/);if(!m)continue;const key='P26/'+m[1],rc=/^RC-/i.test(f.name),buf=await f.arrayBuffer();
-  await idb.put('pdfs',f.name,new Blob([buf],{type:'application/pdf'}));
-  const doc=await pdfjs.getDocument({data:new Uint8Array(buf)}).promise;
-  if(rc)cards[key]={};else compact[key]={};
-  for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);const lines=await pageLines(await doc.getPage(i));
-   if(rc){const d=lines.join('\n').match(/Duty:\s*(\d{3})/);if(!d)continue;const c=cards[key][d[1]]||(cards[key][d[1]]={pdf:f.name,pages:[],pickups:pickups(lines)});c.pages.push(i);n++}
-   else for(const l of lines){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]])compact[key][d[1]]={pdf:f.name,page:i}}}
-  await doc.destroy()}
- await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);return n}
+// Lenient: works with renamed copies ("RC-P26145-AGR (1).pdf", "document.pdf"), empty MIME types, and any import order.
+const DAYN={Sunday:'Sun',Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat'};
+function guessNotice(name,text,notices,rcPages){
+ let m=name.match(/P\s*26\s*[-_/ ]?\s*(\d{3})/i)||text.match(/P26\/(\d{3})/);if(m)return'P26/'+m[1];
+ // RC books don't print the notice number: match duty, weekday and sign-on against the imported CSVs
+ const score={};for(const p of rcPages)for(const n of Object.values(notices)){const d=n.duties&&n.duties[p.duty];if(d&&d.sign_on===p.on&&(!p.day||p.day===n.day))score[n.notice]=(score[n.notice]||0)+1}
+ const best=Object.entries(score).sort((a,b)=>b[1]-a[1])[0];return best?best[0]:null}
+export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
+ const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[]};
+ try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
+ for(const f of files){try{
+  const buf=await f.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf.slice(0,5)));
+  if(head!=='%PDF-'){sum.errors.push(`${f.name}: not a PDF`);continue}
+  const blob=new Blob([buf],{type:'application/pdf'}),doc=await pdfjs.getDocument({data:new Uint8Array(buf.slice(0))}).promise;
+  const pages=[];for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}
+  await doc.destroy();
+  const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],lines:l}:null}).filter(Boolean);
+  const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
+  if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
+  const id=(isRc?'RC-':'C-')+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
+  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
+  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]]){compact[key][d[1]]={pdf:id,page:i+1};sum.compactPages++}}})}
+ }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
+ await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
  return{notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
-export async function renderPages(el,pdfName,pages,width){const blob=await idb.get('pdfs',pdfName);if(!blob){el.textContent='PDF not on this phone — import it in Settings.';return}
+export async function renderPages(el,pdfName,pages,width){const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
  const doc=await pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;el.innerHTML='';
  for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
   const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;el.appendChild(c)}}
