@@ -16,6 +16,9 @@ const duties=()=>LS.get('duties',{}); // {date: duty}
 function resolve(date){const duty=duties()[date];if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:'Rest/other',notice:'',times:null,card:null};
  for(const n of DATA.notices){if(n.dates.includes(date)){const d=n.duties[duty];
    if(d||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d||null,card:(DATA.cards[n.notice]||{})[duty]||null,compact:(DATA.compact[n.notice]||{})[duty]||null}}}
+ const wd=new Date(date+'T12:00:00').getDay();let best=null,book=null;
+ for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length;if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
+ if(best)return{date,duty,type:'Normal',notice:`Duty book ${book.timetable} · ${best.dt}`+(best.inRange?'':' (outside book dates!)'),times:{sign_on:best.on,length:best.length,sign_off:best.finish},card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups}};
  return{date,duty,type:'Normal',notice:'Normal duty book',times:null,card:null}}
 function weekView(){const s=$('#wk').value||sunday(today());$('#wk').value=s;const du=duties();let h='';
  for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d);
@@ -33,7 +36,7 @@ function cardView(){const r=resolve($('#cardDay').value);if(!r){$('#cardInfo').i
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b> · ${esc(r.notice)}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
  if(r.card&&r.card.pickups.length)h+='<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+r.card.pickups.map(p=>`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.dir}</td><td>${p.kind}</td></tr>`).join('')+'</table>';
- if(r.type==='Normal')h+='<p class="err">This is a normal-timetable day. Only engineering-notice running cards are on this phone, so there is no card to show. The normal duty book has not been loaded yet.</p>';
+ if(r.type==='Normal'&&!r.card)h+=(DATA.normal&&DATA.normal.length)?'<p class="err">Duty '+esc(r.duty)+' is not in the normal duty book for this weekday.</p>':'<p class="err">This is a normal-timetable day. Import the normal duty book PDF (e.g. "Arnos Grove Duty Book 132…pdf") in Settings to see its running card.</p>';
  else if(!r.card)h+=r.compact?'<p class="muted">No RC page for this duty. Showing the compact notice page.</p>':'<p class="muted">No running card page imported for this duty.</p>';
  $('#cardInfo').innerHTML=h;const el=$('#cardPages');el.innerHTML='';const w=el.clientWidth||Math.min(innerWidth,800)-24;
  const fail=e=>{el.innerHTML='<p class="err">Could not draw the card: '+esc(e&&e.message||e)+'</p>'};
@@ -98,11 +101,11 @@ $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).val
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
  ({card:cardView,trains:()=>{trains();myTrains()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
-function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards.`}
+function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=async e=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''};
 async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';
  try{const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
-  msg.className=r.errors.length?'err':'ok';msg.innerHTML=pre+`${r.pdfs} of ${r.files} PDFs loaded, ${r.rcPages} running card pages found, ${r.compactPages} compact duties indexed.`+(r.errors.length?'<br>Problems:<br>'+r.errors.map(esc).join('<br>'):'')+(r.rcPages===0&&r.pdfs?'<br>No running card (RC-…) PDFs were found. Select the RC driver book files too.':'')}
+  msg.className=r.errors.length?'err':'ok';msg.innerHTML=pre+(r.normal?r.normal.map(esc).join('<br>')+'<br>':'')+`${r.pdfs} of ${r.files} PDFs loaded, ${r.rcPages} running card pages found, ${r.compactPages} compact duties indexed.`+(r.errors.length?'<br>Problems:<br>'+r.errors.map(esc).join('<br>'):'')+(r.rcPages===0&&r.pdfs&&!r.normal?'<br>No running card (RC-…) PDFs were found. Select the RC driver book files too.':'')}
  catch(err){msg.className='err';msg.textContent='Import failed: '+(err&&err.message||err)}weekView()}
 $('#fPdf').onchange=async e=>{await doPdfs([...e.target.files]);e.target.value=''};
 $('#fDir').onchange=async e=>{const all=[...e.target.files],csv=all.filter(f=>/\.csv$/i.test(f.name)),pdf=all.filter(f=>/\.pdf$/i.test(f.name));

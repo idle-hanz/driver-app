@@ -35,8 +35,23 @@ function guessNotice(name,text,notices,rcPages){
  // RC books don't print the notice number: match duty, weekday and sign-on against the imported CSVs
  const score={};for(const p of rcPages)for(const n of Object.values(notices)){const d=n.duties&&n.duties[p.duty];if(d&&d.sign_on===p.on&&(!p.day||p.day===n.day))score[n.notice]=(score[n.notice]||0)+1}
  const best=Object.entries(score).sort((a,b)=>b[1]-a[1])[0];return best?best[0]:null}
+
+// ---- Normal (current) duty book: detected by content ("DUTY BOOK" + "Duty: NNN <day type> Duty Length") or "Duty Book" in the name ----
+const WD={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
+export function dayTypeDays(dt){const out=new Set();for(const part of dt.split('&')){const r=part.trim().toLowerCase().match(/^(\w{3})\w*(?:\s*-\s*(\w{3})\w*)?$/);if(!r||!(r[1] in WD))continue;
+ const a=WD[r[1]],b=r[2]&&r[2] in WD?WD[r[2]]:a;for(let d=a;;d=(d+1)%7){out.add(d);if(d===b)break}}return[...out].sort()}
+const MON={january:1,february:2,march:3,april:4,may:5,june:6,july:7,august:8,september:9,october:10,november:11,december:12};
+function isoFrom(d,m,y){return`${y}-${String(MON[m.toLowerCase()]).padStart(2,'0')}-${String(d).padStart(2,'0')}`}
+function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ');
+ const v=first.match(/From (\d{1,2}) ([A-Za-z]+) (\d{4}) until (\d{1,2}) ([A-Za-z]+) (\d{4})/i),tn=first.match(/Notice (\d{2,4})/i);
+ const duties=[];pages.forEach((lines,pi)=>{let cur=null;for(const l of lines){const m=l.match(/^Duty:\s*(\d{3}) (.+?) Duty Length:\s*(\d\d:\d\d)/);
+  if(m){cur={duty:m[1],dt:m[2].trim(),days:dayTypeDays(m[2]),length:m[3],pages:[pi+1],lines:[]};duties.push(cur);continue}if(cur)cur.lines.push(l)}});
+ for(const d of duties){const t=d.lines.join('\n');d.on=(t.match(/On:\s*(\d\d:\d\d)/)||[])[1]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';d.pickups=pickups(d.lines);delete d.lines}
+ return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length)}}
+function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
+ return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
- const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[]};
+ const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
  for(const f of files){try{
   const buf=await f.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf.slice(0,5)));
@@ -44,6 +59,9 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   const blob=new Blob([buf],{type:'application/pdf'}),doc=await pdfjs.getDocument({data:new Uint8Array(buf.slice(0))}).promise;
   const pages=[];for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}
   await doc.destroy();
+  if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
+   const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf);books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
+   const types=[...new Set(nb.duties.map(d=>d.dt))];sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length} duties, day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
   const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],lines:l}:null}).filter(Boolean);
   const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
   if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
@@ -53,8 +71,8 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
  await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
- return{notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
-export async function renderPages(el,pdfName,pages,width){const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
- const doc=await pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;el.innerHTML='';
+ return{normal:(await idb.get('kv','normal'))||[],notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
+export async function renderPages(el,pdfName,pages,width){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
+ const doc=await pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;if(tok!==el._tok)return;el.innerHTML='';
  for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
-  const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;el.appendChild(c)}}
+  const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;el.appendChild(c)}}
