@@ -28,7 +28,7 @@ function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').val
  for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d),v=du[d]||'',sp=SPECIAL[v];
   h+=`<div class="day${d===td?' today':''}${sp?' rest':''}"><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span>${d===td?' <span class="tag eng">Today</span>':''}</div><input data-d="${d}" inputmode="numeric" placeholder="Duty" value="${esc(sp?v:v)}">
   <div>${r?(r.special?`<b class="${v==='RD'?'restday':''}">${r.type}</b>`:`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${esc(r.notice)}${r.times?` · On ${r.times.sign_on} · Off ${r.times.sign_off}`:''}`):''}</div>
-  <div class="chips">${['RD','SPARE','AL'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
+  <div class="chips">${['RD'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
  $('#days').innerHTML=h;
  document.querySelectorAll('#days .chip').forEach(b=>b.onclick=()=>{const du=duties();if(du[b.dataset.d]===b.dataset.c)delete du[b.dataset.d];else du[b.dataset.d]=b.dataset.c;LS.set('duties',du);weekView()});
  document.querySelectorAll('#days input').forEach(i=>i.onchange=()=>{const du=duties(),v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d];LS.set('duties',du);weekView()});
@@ -41,9 +41,6 @@ function fillDays(){const s=addD($('#wk').value,-6),o=[...Array(7)].map((_,i)=>{
  for(const id of['#cardDay','#paceDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
 $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
 $('#wk').onchange=weekView;
-$('#dutyFile').onchange=async e=>{const t=await e.target.files[0].text(),du=duties();let n=0;
- for(const line of t.split(/\r?\n/)){const c=line.split(/[,;\t]/).map(x=>scrub(x));const date=c.find(x=>/^\d{4}-\d\d-\d\d$/.test(x)),duty=c.find(x=>/^(\d{3}|RD|SPARE)$/i.test(x));if(date&&duty){du[date]=duty.toUpperCase();n++}}
- LS.set('duties',du);weekView();$('#wkMsg').textContent=`Loaded ${n} duties from your file (only date and duty number kept).`};
 function cardView(){const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b> · ${esc(r.notice)}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
