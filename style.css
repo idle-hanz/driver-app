@@ -9,3 +9,6 @@ button.b{background:#dc241f;color:#fff;border:0;border-radius:8px;padding:12px 1
 .err{color:#ffb4ab;background:#3a1010;padding:8px;border-radius:6px}.ok{color:#b6f2c0}summary{margin-top:10px;color:#9cf}
 .trainno{font-size:72px;font-weight:800;line-height:1;color:#fff;letter-spacing:2px}.trainhead{display:flex;gap:16px;align-items:center}.tno{font-weight:800;background:#dc241f;color:#fff;border-radius:4px;padding:0 6px;margin-right:6px}.pick{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}.pick button{background:#2a3570;color:#fff;border:0;border-radius:6px;padding:8px 10px}.pick button.on{background:#dc241f}
 .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#1d7a3a;color:#fff;padding:10px 16px;border-radius:8px;z-index:9;box-shadow:0 2px 8px #0008}
+.wkrow{display:flex;gap:6px;align-items:center}.wkrow select{flex:1}.wkrow button{margin:0;padding:10px 16px;font-size:20px}#wk.cur{border:2px solid #dc241f}
+.day{grid-template-columns:90px 80px 1fr}.chips{grid-column:1/-1;display:flex;gap:6px;margin-top:-2px}.chip{background:#2a3570;color:#cde;border:0;border-radius:16px;padding:6px 12px;font-size:14px}.chip.on{background:#2e8b57;color:#fff}
+.day.today{background:#24306a;border-left:4px solid #dc241f;padding-left:6px;border-radius:6px}.day.rest input{color:#9fd8b0}.restday{font-size:22px;font-weight:700;color:#9fd8b0}

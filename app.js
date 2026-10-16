@@ -13,26 +13,38 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const scrub=s=>String(s).replace(/(\+44\s?|0)\d[\d\s]{8,12}\d/g,'').trim();
 const duties=()=>LS.get('duties',{}); // {date: duty}
 // Running card pick: notice whose published dates include this date -> engineering card, else normal book
-function resolve(date){const duty=duties()[date];if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:'Rest/other',notice:'',times:null,card:null};
+const SPECIAL={RD:'Rest day',AL:'Annual leave',SPARE:'Spare'};
+function resolve(date){const duty=duties()[date];if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:SPECIAL[duty]||'Other',special:true,notice:'',times:null,card:null};
  for(const n of DATA.notices){if(n.dates.includes(date)){const d=n.duties[duty];
    if(d||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d||null,cover:!!(d&&d.section==='cover'),spare:!!(d&&d.section==='spare'),card:(DATA.cards[n.notice]||{})[duty]||null,compact:(DATA.compact[n.notice]||{})[duty]||null}}}
  const wd=new Date(date+'T12:00:00').getDay();let best=null,book=null;
  for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length*2+(d.cover?1:0);if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
  if(best)return{date,duty,type:'Normal',notice:`Duty book ${book.timetable} · ${best.dt}`+(best.inRange?'':' (outside book dates!)'),times:{sign_on:best.on,length:best.length,sign_off:best.finish+(best.finishAt&&best.finishAt!=='*'?' '+best.finishAt:best.finishAt==='*'?' *':'')},cover:!!best.cover,spare:!!best.spare,note:best.note||'',desc:best.desc||'',card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups,hl:best.hl}};
  return{date,duty,type:'Normal',notice:'Normal duty book',times:null,card:null}}
-function weekView(){const s=$('#wk').value||sunday(today());$('#wk').value=s;const du=duties();let h='';
- for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d);
-  h+=`<div class="day"><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span></div><input data-d="${d}" inputmode="numeric" placeholder="Duty/RD" value="${esc(du[d]||'')}">
-  <div>${r?`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${esc(r.notice)}${r.times?` · On ${r.times.sign_on} · Off ${r.times.sign_off}`:''}`:''}</div></div>`}
- $('#days').innerHTML=h;fillDays()}
-function fillDays(){const s=$('#wk').value,o=[...Array(7)].map((_,i)=>{const d=addD(s,i);return`<option value="${d}">${DAYS[i]} ${d} — ${esc(duties()[d]||'no duty')}</option>`}).join('');
+const sat=s=>addD(sunday(s),6);
+function wkOptions(){const cur=sat(today()),sel=$('#wk').value||cur;let o='';for(let k=-8;k<=26;k++){const d=addD(cur,k*7);o+=`<option value="${d}">${k===0?'▶ ':''}Sat ${d.slice(8)}/${d.slice(5,7)}/${d.slice(2,4)}${k===0?' (this week)':''}</option>`}
+ $('#wk').innerHTML=o;if(![...$('#wk').options].some(x=>x.value===sel))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${sel}">w/e Sat ${sel.slice(8)}/${sel.slice(5,7)}/${sel.slice(0,4)}</option>`);$('#wk').value=sel}
+function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').value,s=addD(e,-6),du=duties(),td=today();$('#wk').classList.toggle('cur',e===sat(td));let h='';
+ for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d),v=du[d]||'',sp=SPECIAL[v];
+  h+=`<div class="day${d===td?' today':''}${sp?' rest':''}"><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span>${d===td?' <span class="tag eng">Today</span>':''}</div><input data-d="${d}" inputmode="numeric" placeholder="Duty" value="${esc(sp?v:v)}">
+  <div>${r?(r.special?`<b class="${v==='RD'?'restday':''}">${r.type}</b>`:`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${esc(r.notice)}${r.times?` · On ${r.times.sign_on} · Off ${r.times.sign_off}`:''}`):''}</div>
+  <div class="chips">${['RD','SPARE','AL'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
+ $('#days').innerHTML=h;
+ document.querySelectorAll('#days .chip').forEach(b=>b.onclick=()=>{const du=duties();if(du[b.dataset.d]===b.dataset.c)delete du[b.dataset.d];else du[b.dataset.d]=b.dataset.c;LS.set('duties',du);weekView()});
+ document.querySelectorAll('#days input').forEach(i=>i.onchange=()=>{const du=duties(),v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d];LS.set('duties',du);weekView()});
+ fillDays()}
+function normCode(v){v=String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(!v)return'';if(/^(RD|R|REST.*|OFF)$/.test(v))return'RD';if(/^(AL|A|LEAVE|ANNUALLEAVE|HOL)$/.test(v))return'AL';if(/^(SP|SPARE|S)$/.test(v))return'SPARE';return v}
+(function migrate(){const du=duties();let ch=false;for(const k in du){const n=normCode(du[k]);if(n!==du[k]){ch=true;if(n)du[k]=n;else delete du[k]}}if(ch)LS.set('duties',du)})();
+$('#wkPrev').onclick=()=>{const o=$('#wk');if(o.selectedIndex>0){o.selectedIndex--;weekView()}};$('#wkNext').onclick=()=>{const o=$('#wk');if(o.selectedIndex<o.options.length-1){o.selectedIndex++;weekView()}};
+$('#wkNow').onclick=()=>{$('#wk').value=sat(today());weekView()};
+function fillDays(){const s=addD($('#wk').value,-6),o=[...Array(7)].map((_,i)=>{const d=addD(s,i);const v=duties()[d];return`<option value="${d}">${d===today()?'▶ ':''}${DAYS[i]} ${d} — ${esc(SPECIAL[v]||v||'no duty')}</option>`}).join('');
  for(const id of['#cardDay','#paceDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
-$('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=i.value.trim();if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
+$('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
 $('#wk').onchange=weekView;
 $('#dutyFile').onchange=async e=>{const t=await e.target.files[0].text(),du=duties();let n=0;
  for(const line of t.split(/\r?\n/)){const c=line.split(/[,;\t]/).map(x=>scrub(x));const date=c.find(x=>/^\d{4}-\d\d-\d\d$/.test(x)),duty=c.find(x=>/^(\d{3}|RD|SPARE)$/i.test(x));if(date&&duty){du[date]=duty.toUpperCase();n++}}
  LS.set('duties',du);weekView();$('#wkMsg').textContent=`Loaded ${n} duties from your file (only date and duty number kept).`};
-function cardView(){const r=resolve($('#cardDay').value);if(!r){$('#cardInfo').innerHTML='<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
+function cardView(){const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b> · ${esc(r.notice)}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
  if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+='<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
@@ -61,8 +73,9 @@ const NOW=()=>{const q=new URLSearchParams(location.search).get('now');return q?
 let trSel=null;
 async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#trains.on'))return;
  const nowD=NOW(),now=+nowD,date=`${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}-${String(nowD.getDate()).padStart(2,'0')}`,r=resolve(date);
- const head=`<p class="muted">Today ${DAYS[nowD.getDay()]} ${date.slice(8)}/${date.slice(5,7)}${r?' · duty '+esc(r.duty):''}</p>`;
+ const head=`<p class="muted">Today ${DAYS[nowD.getDay()]} ${date.slice(8)}/${date.slice(5,7)}${r?' · '+(r.special?r.type:'duty '+esc(r.duty)):''}</p>`;
  if(r&&(r.cover||r.spare)){out.innerHTML=head+`<p class="big">${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</p><p>No booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
+ if(r&&r.special){out.innerHTML=head+`<p class="restday">${r.type}</p><p class="muted">No train to track today.</p>`;return}
  if(!r){out.innerHTML=head+'<p class="big">No duty set for today</p><p class="muted">Enter today\'s duty on the Week tab.</p>';return}
  if(!r.card||!r.card.pickups.length){out.innerHTML=head+'<p class="big">No pick-ups known</p><p class="muted">This duty\'s running card is not on this device. Import it in Settings.</p>';return}
  const ps=r.card.pickups,on=t2m(r.times&&r.times.sign_on||ps[0].time);
@@ -91,7 +104,7 @@ $('#allTrains').addEventListener('toggle',()=>{if($('#allTrains').open)trains()}
 $('#stn').onchange=trains;
 async function journeyMin(){if(S.tt&&S.homeLL&&S.depotLL){try{const r=await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${S.homeLL}:${S.depotLL}/json?traffic=true&key=${encodeURIComponent(S.tt)}`);const j=await r.json();return{m:Math.ceil(j.routes[0].summary.travelTimeInSeconds/60),src:'TomTom live traffic'}}catch(e){}}return{m:+S.journey,src:'usual journey time'}}
 let lastPace=null;
-async function paceView(){const r=resolve($('#paceDay').value);rest();$('#paceOut').innerHTML='';if(!r||!r.times){$('#paceOut').innerHTML=r?'<p>Sign-on time not known for a normal-book duty yet. Enter it below.</p><input id="manOn" placeholder="Sign on HH:MM">':'<p>No duty entered.</p>';
+async function paceView(){const r=resolve($('#paceDay').value);rest();$('#paceOut').innerHTML='';if(r&&r.special){$('#paceOut').innerHTML=`<p class="restday">${r.type}</p><p class="muted">Nothing to pace.</p>`;lastPace=null;return}if(!r||!r.times){$('#paceOut').innerHTML=r?'<p>Sign-on time not known for a normal-book duty yet. Enter it below.</p><input id="manOn" placeholder="Sign on HH:MM">':'<p>No duty entered.</p>';
   const m=$('#manOn');if(m)m.onchange=()=>{lastPace=null;calc(m.value)};return}calc(r.times.sign_on)}
 async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const j=await journeyMin(),son=t2m(on),arrive=son-(+S.lie),leave=arrive-j.m-(+S.margin),wake=son-(+S.ready);lastPace={leave,wake};
  $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML:'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr><tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>Wake / get up</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table><p class="muted">Journey ${j.m} min (${j.src}) + ${S.margin} min safety margin · lie-down ${S.lie} min · get-ready ${S.ready} min</p>`}
@@ -126,5 +139,5 @@ $('#fDir').onchange=async e=>{const all=[...e.target.files],csv=all.filter(f=>/\
  await doPdfs(pdf,`${csv.length} CSVs read (${c.dut} duties). `);e.target.value=''};
 $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties, hours and settings from this phone?'))return;await wipe();localStorage.clear();location.reload()};
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
-reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');if(w)$('#wk').value=w;weekView();cardView()});
+reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView()});
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js');navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
