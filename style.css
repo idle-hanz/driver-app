@@ -21,3 +21,5 @@ html.cardtab,html.cardtab body{overscroll-behavior-y:contain}
 .pagehint.show{opacity:.75}.pagehint.ready{opacity:1;background:#0019a8}.pagehint.bottom{bottom:16px}.pagehint.top{top:60px}
 @keyframes su{from{transform:translateY(40%);opacity:.3}to{transform:none;opacity:1}}@keyframes sd{from{transform:translateY(-40%);opacity:.3}to{transform:none;opacity:1}}
 section.slide-u{animation:su .2s ease-out}section.slide-d{animation:sd .2s ease-out}@media (prefers-reduced-motion:reduce){section.slide-u,section.slide-d{animation:none}}
+tr.meal td{background:#1d2a1d;color:#cfe8cf}.mealbox{border:2px solid #3a7d44;border-radius:10px;padding:6px 10px;margin:6px 0;background:#132013}
+.chgb{background:#b35c00;color:#fff}.chg{border-left:3px solid #b35c00;padding-left:8px;margin:8px 0}

@@ -21,7 +21,7 @@
 <label><b>Easiest:</b> pick the whole folder (e.g. "Driver App Phone Files") — CSVs and PDFs are imported together</label><input type="file" id="fDir" webkitdirectory multiple>
 <label>Or notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" multiple>
 <label>Duty book PDFs: RC-P26xxx-AGR.pdf <b>and</b> P26xxx-AGR.pdf (select several — Ctrl+A in the file window)</label><input type="file" id="fPdf" multiple>
-<p class="muted" id="impMsg"></p><p class="muted" id="dataSummary"></p><button class="b s" id="clearData">Clear my data</button></div><div class="card">
+<p class="muted" id="impMsg"></p><div id="changes"></div><p class="muted" id="dataSummary"></p><button class="b s" id="clearData">Clear my data</button></div><div class="card">
 <label>Depot address / destination for Maps (not confirmed — entrance thought to be off Palmers Road)</label><input id="sDepot">
 <label>Depot lat,lon (for TomTom; optional)</label><input id="sDepotLL" placeholder="51.61,-0.13"><button class="b s" id="geoDepot">Find depot from address (TomTom)</button><label>Home lat,lon (stays on this phone)</label><input id="sHomeLL" placeholder="51.6,-0.1"><button class="b s" id="geoHome">Use my current location as home</button><p class="muted" id="geoMsg"></p>
 <label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">

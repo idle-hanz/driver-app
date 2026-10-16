@@ -18,14 +18,14 @@ function resolve(date){const duty=duties()[date];if(!duty)return null;if(!/^\d{3
    if(d||n.kind==='FULL')return{date,duty,type:'Engineering',notice:n.notice,times:d||null,cover:!!(d&&d.section==='cover'),spare:!!(d&&d.section==='spare'),card:(DATA.cards[n.notice]||{})[duty]||null,compact:(DATA.compact[n.notice]||{})[duty]||null,get onAt(){return(this.card&&this.card.onAt)||(this.compact&&this.compact.onAt)||''}}}}
  const wd=new Date(date+'T12:00:00').getDay();let best=null,book=null;
  for(const b of DATA.normal||[]){const inRange=!b.from||(date>=b.from&&date<=b.until);for(const d of b.duties)if(d.duty===duty&&d.days.includes(wd)){const sc=(inRange?0:100)+d.days.length*2+(d.cover?1:0);if(!best||sc<best.sc){best={...d,sc,inRange};book=b}}}
- if(best)return{date,duty,type:'Normal',onAt:best.onAt||best.from||'',warn:best.inRange?'':'Outside the duty book dates!',notice:`Duty book ${book.timetable} · ${best.dt}`,times:{sign_on:best.on,length:best.length,sign_off:best.finish+(best.finishAt&&best.finishAt!=='*'?' '+best.finishAt:best.finishAt==='*'?' *':'')},cover:!!best.cover,spare:!!best.spare,note:best.note||'',desc:best.desc||'',card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups,hl:best.hl}};
+ if(best)return{date,duty,type:'Normal',onAt:best.onAt||best.from||'',warn:best.inRange?'':'Outside the duty book dates!',notice:`Duty book ${book.timetable} · ${best.dt}`,times:{sign_on:best.on,length:best.length,sign_off:best.finish+(best.finishAt&&best.finishAt!=='*'?' '+best.finishAt:best.finishAt==='*'?' *':'')},cover:!!best.cover,spare:!!best.spare,note:best.note||'',desc:best.desc||'',card:{pdf:book.pdf,pages:best.pages,pickups:best.pickups,meals:best.meals||[],hl:best.hl}};
  return{date,duty,type:'Normal',notice:'Normal duty book',times:null,card:null}}
 const sat=s=>addD(sunday(s),6);
 function wkOptions(){const cur=sat(today()),sel=$('#wk').value||cur;let o='';for(let k=-8;k<=26;k++){const d=addD(cur,k*7);o+=`<option value="${d}">${k===0?'▶ ':''}Sat ${d.slice(8)}/${d.slice(5,7)}/${d.slice(2,4)}${k===0?' (this week)':''}</option>`}
  $('#wk').innerHTML=o;if(![...$('#wk').options].some(x=>x.value===sel))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${sel}">w/e Sat ${sel.slice(8)}/${sel.slice(5,7)}/${sel.slice(0,4)}</option>`);$('#wk').value=sel}
 function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').value,s=addD(e,-6),du=duties(),td=today();$('#wk').classList.toggle('cur',e===sat(td));let h='';
  for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d),v=du[d]||'',sp=SPECIAL[v];
-  h+=`<div class="day${d===td?' today':''}${sp?' rest':''}" data-day="${d}" role="button" title="Open running card"><span class="chev">›</span><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span>${d===td?' <span class="tag eng">Today</span>':''}</div><input data-d="${d}" inputmode="numeric" placeholder="Duty" value="${esc(sp?v:v)}">
+  h+=`<div class="day${d===td?' today':''}${sp?' rest':''}" data-day="${d}" role="button" title="Open running card"><span class="chev">›</span><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span>${d===td?' <span class="tag eng">Today</span>':''}${(LS.get('changes',{})[d]||{}).seen===false?' <span class="tag chgb">Changed</span>':''}</div><input data-d="${d}" inputmode="numeric" placeholder="Duty" value="${esc(sp?v:v)}">
   <div>${r?(r.special?`<b class="${v==='RD'?'restday':''}">${r.type}</b>`:`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${r.times?` On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Off ${r.times.sign_off}`:''}${r.warn?` <span class="err">${r.warn}</span>`:''}`):''}</div>
   <div class="chips">${['RD'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
  $('#days').innerHTML=h;
@@ -43,12 +43,22 @@ $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days i
 $('#wk').onchange=weekView;
 let cardFromWeek=null;
 function todayISO(){const d=NOW();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+// Pick-up table with meal reliefs slotted in time order (times relative to the first pick-up so overnight duties sort right)
+function pickTable(c){const ps=c.pickups||[],ms=c.meals||[],b=ps.length?t2m(ps[0].time)-120:0,rel=t=>(t2m(t)-b+1440)%1440;
+ const rows=[...ps.map(p=>({k:rel(p.time),h:`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`})),
+  ...ms.map(m=>({k:rel(m.from)-0.5,h:`<tr class="meal"><td colspan="5">🍽 Meal relief <b>${m.from}–${m.to}</b> at ${esc(m.at)}</td></tr>`}))].sort((x,y)=>x.k-y.k);
+ return'<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+rows.map(r=>r.h).join('')+'</table>'}
+function mealBanner(card,ps,at,now,cur,working,end){const ms=card.meals||[];for(const m of ms){const f=at(m.from),t=at(m.to);let nx=ps.findIndex(q=>+at(q.time)>=+t);const n=ps[nx];
+  const backBy=n?at(n.time):t;if(now>=+f&&now<+backBy){const mins=Math.max(0,Math.ceil((t-now)/60000));
+   return`<div class="mealbox"><p class="big">🍽 Meal relief ${m.from}–${m.to} at ${esc(m.at)}</p><p>${now<+t?`Back on in <b>${mins} min</b>`:'Meal over'}${n?`, next train <b>${esc(n.train)}</b> ${n.time} at ${esc(n.at)} (${n.rev?'Reverser':n.dir})`:''}</p></div>`}}
+ if(working&&ps[cur]){const e=+end(ps[cur],cur),s=+at(ps[cur].time);const nx=ps[cur+1]?+at(ps[cur+1].time):e+6*3600e3,m=ms.find(m=>+at(m.from)>=s&&+at(m.from)<nx);if(m)return`<p class="tag">Next: meal relief ${m.from} at ${esc(m.at)}</p>`}
+ return''}
 function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:00:00');$('#cardHead').innerHTML=`<p><b>${d===t?'Today':''} ${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}</b>${d!==t?' · <a href="#" id="backToday">Back to today</a>':''}</p>`;const bt=$('#backToday');if(bt)bt.onclick=e=>{e.preventDefault();$('#cardDay').value=t;setHash('card/'+t);cardView()}}
-function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();cardHead();const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
+function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();{const ch=LS.get('changes',{}),cd=$('#cardDay').value;if(ch[cd]&&!ch[cd].seen&&document.querySelector('nav button.on')?.dataset.t==='card'){ch[cd].seen=true;LS.set('changes',ch)}}cardHead();const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b>${r.warn?' <span class="err">'+r.warn+'</span>':''}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
  if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+='<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
- if(r.card&&r.card.pickups.length)h+='<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+r.card.pickups.map(p=>`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`).join('')+'</table>';
+ if(r.card&&r.card.pickups.length)h+=pickTable(r.card);
  if(r.type==='Normal'&&!r.card)h+=(DATA.normal&&DATA.normal.length)?'<p class="err">Duty '+esc(r.duty)+' is not in the normal duty book for this weekday.</p>':'<p class="err">This is a normal-timetable day. Import the normal duty book PDF (e.g. "Arnos Grove Duty Book 132…pdf") in Settings to see its running card.</p>';
  else if(!r.card)h+=r.compact?'<p class="muted">No RC page for this duty. Showing the compact notice page (row highlighted).</p>':'<p class="muted">No running card page imported for this duty.</p>';
  $('#cardInfo').innerHTML=h;const el=$('#cardPages');el.innerHTML='';const w=el.clientWidth||Math.min(innerWidth,800)-24;
@@ -57,7 +67,7 @@ function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();cardH
 function browseFill(){const ns=Object.keys(DATA.cards).sort();$('#bNotice').innerHTML='<option value="">—</option>'+ns.map(n=>`<option>${n}</option>`).join('');$('#bDuty').innerHTML=''}
 $('#bNotice').onchange=()=>{const c=DATA.cards[$('#bNotice').value]||{};$('#bDuty').innerHTML='<option value="">—</option>'+Object.keys(c).sort().map(d=>`<option>${d}</option>`).join('')};
 $('#bDuty').onchange=()=>{const n=$('#bNotice').value,d=$('#bDuty').value,c=(DATA.cards[n]||{})[d];if(!c)return;const nn=DATA.notices.find(x=>x.notice===n),t=nn&&nn.duties[d];
- $('#cardInfo').innerHTML=`<p><span class="tag eng">Engineering</span> Duty <b>${d}</b></p>`+(t?`<p>On <b>${t.sign_on}</b> · Length ${t.length} · Off <b>${t.sign_off}</b></p>`:'')+'<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+c.pickups.map(p=>`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`).join('')+'</table>';
+ $('#cardInfo').innerHTML=`<p><span class="tag eng">Engineering</span> Duty <b>${d}</b></p>`+(t?`<p>On <b>${t.sign_on}</b> · Length ${t.length} · Off <b>${t.sign_off}</b></p>`:'')+pickTable(c);
  const el=$('#cardPages');renderPages(el,c.pdf,c.pages,el.clientWidth||innerWidth-24).catch(e=>{el.innerHTML='<p class="err">Could not draw the card: '+esc(e.message)+'</p>'})};
 
 const STNS={'940GZZLUASG':'Arnos Grove','940GZZLUCKS':'Cockfosters','940GZZLUOAK':'Oakwood','940GZZLUSGT':'Southgate','940GZZLUBDS':'Bounds Green','940GZZLUACT':'Acton Town','940GZZLUNFD':'Northfields','940GZZLUHR4':'Heathrow T4','940GZZLUHRC':'Heathrow T2&3','940GZZLUUXB':'Uxbridge'};
@@ -86,7 +96,7 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
  if(cur<0){out.innerHTML=head+'<p class="big">All pick-ups done</p><p class="muted">Last relief has passed.</p>'+sel;bindSel();return}
  const p=ps[cur],booked=at(p.time),working=now>=+booked,rel=p.relief?` · relieved ${p.relief}`:'';
  const dirTxt=p.rev?'Reverser':`${p.dir}`;
- let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;
+ let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;h=h.replace('<div class="trainhead">',mealBanner(r.card,ps,at,now,cur,working,end)+'<div class="trainhead">');
  let all=null;try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){h+='<p class="err">No live data (offline?).</p>'}
  if(all){const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation),T=`<span class="tno">${esc(p.train)}</span>`;
   if(!preds.length)h+=`<p>${T}${booked-now>3600e3?'Not running yet / too far ahead.':p.kind!=='Platform'&&!working?'Not in TfL arrivals yet (starts from the depot road).':'Not found in TfL arrivals right now.'} Checking again every 30 s.</p>`;
@@ -218,16 +228,28 @@ function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.ha
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
  ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:paceView,hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
+// ---- What changed after an import: compare parsed results for every entered day from this week on ----
+function daySnap(d){const r=resolve(d);if(!r)return null;const pk=r.card&&r.card.pickups&&r.card.pickups.length?r.card.pickups.map(p=>`${p.train} ${p.time} ${p.at}${p.rev?' (Reverser)':''}`).join(', '):null;
+ return{type:r.special?r.type:r.type+(r.cover?' cover':r.spare?' spare':''),on:r.times&&r.times.sign_on||'',off:r.times&&r.times.sign_off||'',onAt:r.onAt||'',pk}}
+function snapAll(){const from=addD(sat(today()),-6),o={};for(const[d,v]of Object.entries(duties()))if(d>=from&&v)o[d]=daySnap(d);return o}
+const descSnap=s=>!s?'—':`${s.type}${s.on?` · on ${s.on}${s.onAt?' '+s.onAt:''} · off ${s.off}`:''}${s.pk?`<br><span class="muted">Pick-ups: ${esc(s.pk)}</span>`:''}`;
+function showChanges(before){const ch=LS.get('changes',{}),list=[];
+ for(const d of Object.keys(before).sort()){const b=before[d],n=daySnap(d);if(!b||!n)continue;const diff=[];
+  if(b.type!==n.type)diff.push('type');if(b.on!==n.on||b.off!==n.off)diff.push('times');if(b.onAt!==n.onAt&&b.onAt&&n.onAt)diff.push('sign-on place');if(b.pk&&n.pk&&b.pk!==n.pk)diff.push('pick-ups');if(!b.pk&&n.pk&&!diff.length)diff.push('running card now on phone');
+  if(diff.length){list.push({d,duty:duties()[d],b,n,diff});ch[d]={seen:false}}}
+ LS.set('changes',ch);const el=$('#changes');
+ el.innerHTML=list.length?`<h3>What changed</h3>`+list.map(x=>{const dd=new Date(x.d+'T12:00:00');return`<div class="chg"><p><b>${DAYS[dd.getDay()]} ${x.d.slice(8)}/${x.d.slice(5,7)}</b> · duty ${esc(x.duty)} · <span class="tag">${x.diff.join(', ')}</span></p><p>Before: ${descSnap(x.b)}</p><p>After: ${descSnap(x.n)}</p></div>`}).join(''):'<p class="muted">What changed: none of your entered days (this week onwards) are affected.</p>'}
+async function withDiff(fn){const before=snapAll();await fn();showChanges(before);weekView()}
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
-$('#fCsv').onchange=async e=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''};
+$('#fCsv').onchange=e=>withDiff(async()=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''});
 async function doPdfs(files,pre=''){const msg=$('#impMsg');msg.className='muted';
  try{const r=await importPdfs(files,m=>msg.textContent='Reading '+m);await reload();
   msg.className=r.errors.length?'err':'ok';msg.innerHTML=pre+(r.normal?r.normal.map(esc).join('<br>')+'<br>':'')+`${r.pdfs} of ${r.files} PDFs loaded, ${r.rcPages} running card pages found, ${r.compactPages} compact duties indexed.`+(r.errors.length?'<br>Problems:<br>'+r.errors.map(esc).join('<br>'):'')+(r.rcPages===0&&r.pdfs&&!r.normal?'<br>No running card (RC-…) PDFs were found. Select the RC driver book files too.':'')}
  catch(err){msg.className='err';msg.textContent='Import failed: '+(err&&err.message||err)}weekView()}
-$('#fPdf').onchange=async e=>{await doPdfs([...e.target.files]);e.target.value=''};
-$('#fDir').onchange=async e=>{const all=[...e.target.files],csv=all.filter(f=>/\.csv$/i.test(f.name)),pdf=all.filter(f=>/\.pdf$/i.test(f.name));
+$('#fPdf').onchange=e=>withDiff(async()=>{await doPdfs([...e.target.files]);e.target.value=''});
+$('#fDir').onchange=e=>withDiff(async()=>{const all=[...e.target.files],csv=all.filter(f=>/\.csv$/i.test(f.name)),pdf=all.filter(f=>/\.pdf$/i.test(f.name));
  let c={pack:0,dut:0};try{c=await importCsvs(csv);await reload()}catch(err){}
- await doPdfs(pdf,`${csv.length} CSVs read (${c.dut} duties). `);e.target.value=''};
+ await doPdfs(pdf,`${csv.length} CSVs read (${c.dut} duties). `);e.target.value=''});
 $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties, hours and settings from this phone?'))return;await wipe();localStorage.clear();location.reload()};
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();

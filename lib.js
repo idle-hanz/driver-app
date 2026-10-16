@@ -25,6 +25,7 @@ async function pageLines(page){const tc=await page.getTextContent(),rows=[];
  rows.sort((a,b)=>b.y-a.y);const out=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim());
  out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.ph=page.view[3];return out}
 const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?\b)?)/;
+export function meals(lines){const out=[],seen=new Set();for(const m of lines.join('\n').matchAll(/Meal\s+Relief\s+(\d\d:\d\d)\s+to\s+(\d\d:\d\d)\s+at\s+([A-Z][A-Za-z ]{1,20}?)(?=\s{2,}|\s*$|\s+\d|\n)/gim)){const k=m[1]+m[2];if(seen.has(k))continue;seen.add(k);out.push({from:m[1],to:m[2],at:m[3].trim()})}return out}
 function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE);if(!m)return;let relief='',endAt='';for(const k of [l,...lines.slice(j+1)]){if(k!==l&&PLACE.test(k))break;const rr=k.match(/Relieved at (\d\d:\d\d)/);if(rr){relief=rr[1];break}
   const ms=[...k.matchAll(/(?:\d\d:\d\d(?::? ?\d\d)?\s+)([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?)?)\b/g)];if(ms.length)endAt=ms[ms.length-1][1];else{const bare=k.match(/^([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?)?)$/);if(bare)endAt=bare[1]}}let place=m[3],tok=place.split(' '),dir={E:'Eastbound',W:'Westbound'}[tok[tok.length-1]];
  // 'CFS DTE'/'DTW' are depot road names, not directions
@@ -63,11 +64,11 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
  for(const c of covers){c.days=secDays[c.tablePage]||[];c.dt='Cover duty ('+(c.days.length>1?DN[c.days[0]]+' - '+DN[c.days[c.days.length-1]]:DN[c.days[0]]||'?')+')';delete c.tablePage}
  for(const d of duties){const t=d.lines.join('\n');const om=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/)||[];d.on=om[1]||'';d.onAt=om[2]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';
-  const fm=t.match(/Finish:\s*\S+ \*/),nt=t.match(/\*:?\s*(This duty may finish[^\n]*)/i);if(fm&&nt)d.note=nt[1];if(/Spare Day on the Rota/i.test(t))d.spare=true;d.pickups=pickups(d.lines);delete d.lines}
+  const fm=t.match(/Finish:\s*\S+ \*/),nt=t.match(/\*:?\s*(This duty may finish[^\n]*)/i);if(fm&&nt)d.note=nt[1];if(/Spare Day on the Rota/i.test(t))d.spare=true;d.pickups=pickups(d.lines);d.meals=meals(d.lines);delete d.lines}
  return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
-export const PARSER_VERSION=5;
+export const PARSER_VERSION=6;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
  const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
@@ -78,13 +79,13 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   const pages=[];for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}
   await doc.destroy();
   if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
-   const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf);books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
+   const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf&&!(nb.timetable&&b.timetable===nb.timetable)&&!(nb.from&&b.from&&b.from<=nb.until&&nb.from<=b.until));/* a replacement book supersedes overlapping ones */books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
    const types=[...new Set(nb.duties.filter(d=>!d.cover).map(d=>d.dt))],nc=nb.duties.filter(d=>d.cover).length;sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length-nc} duty cards + ${nc} cover duties (${[...new Set(nb.duties.filter(d=>d.cover).map(d=>d.dt))].join(', ')}), day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
   const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],onAt:on&&on[2]||'',lines:l}:null}).filter(Boolean);
   const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
   if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
   const id=(isRc?'RC-':'C-')+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
-  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,onAt:p.onAt,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
+  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,onAt:p.onAt,pages:[],pickups:pickups(p.lines),meals:[]});for(const m of meals(p.lines))if(!c.meals.some(x=>x.from===m.from))c.meals.push(m);c.pages.push(p.i);sum.rcPages++}}
   else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d(?: ([A-Z]{2,4}))?/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,onAt:d[2]||'',hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
  await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
