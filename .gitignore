@@ -5,3 +5,4 @@ cards/
 *.json
 !manifest.webmanifest
 node_modules/
+!stations.json

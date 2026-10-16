@@ -13,8 +13,8 @@
 <section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
 <button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm</button><p class="muted" id="alarmNote">These open the phone's Clock app with the time filled in.</p></div>
 </section>
-<section id="hours"><div class="card"><label>Date</label><input type="date" id="hDate"><label>Duty</label><input id="hDuty" inputmode="numeric">
-<label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
+<section id="hours"><div class="card"><button class="b" id="boBtn" style="width:100%;font-size:20px">Arrived at book-off</button><p class="muted">Uses your location once (only while the app is open) and TfL arrivals to pre-fill the form below. Check and edit before saving.</p><div id="boOut"></div></div><div class="card"><label>Date</label><input type="date" id="hDate"><label>Duty</label><input id="hDuty" inputmode="numeric">
+<label>Arrived at book-off (time)</label><input id="hTime" type="time"><label>Book-off station</label><input id="hStation"><label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
 <label>Train number taken to book-off point</label><input id="hTrain" inputmode="numeric"><label>Notes</label><input id="hNote">
 <button class="b" id="hAdd">Add to log</button><button class="b s" id="hCsv">Export CSV</button></div><div class="card"><table id="hTab"></table></div></section>
 <section id="set"><div class="card"><b>My files (stay on this phone only)</b>
