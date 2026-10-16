@@ -1,8 +1,7 @@
 import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
-const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,ready:5,tt:'',
- rest:'Arnos Grove depot mess room\nCockfosters depot mess room\nYour car (parked, engine off)\nHome before leaving'};
+const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,ready:5,tt:'',};
 const _st=LS.get('settings',{});if(_st.ready===undefined)delete _st.lie;let S=Object.assign({},DEF,_st),DATA={notices:[],cards:{},compact:{}};
 const iso=d=>d.toISOString().slice(0,10),addD=(s,n)=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return iso(d)};
 const sunday=s=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-d.getUTCDay());return iso(d)};
@@ -124,16 +123,24 @@ $('#allTrains').addEventListener('toggle',()=>{if($('#allTrains').open)trains()}
 $('#stn').onchange=trains;
 async function journeyMin(){if(S.tt&&S.homeLL&&S.depotLL){try{const r=await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${S.homeLL}:${S.depotLL}/json?traffic=true&key=${encodeURIComponent(S.tt)}`);const j=await r.json();return{m:Math.ceil(j.routes[0].summary.travelTimeInSeconds/60),src:'TomTom live traffic'}}catch(e){}}return{m:+S.journey,src:'usual journey time'}}
 let lastPace=null;
-async function paceView(){const r=resolve($('#paceDay').value);rest();$('#paceOut').innerHTML='';if(r&&r.special){$('#paceOut').innerHTML=`<p class="restday">${r.type}</p><p class="muted">Nothing to pace.</p>`;lastPace=null;return}if(!r||!r.times){$('#paceOut').innerHTML=r?'<p>Sign-on time not known for a normal-book duty yet. Enter it below.</p><input id="manOn" placeholder="Sign on HH:MM">':'<p>No duty entered.</p>';
+async function paceView(){lastPace=null;alarmLabels();$('#alarmNote').textContent="These open the phone's Clock app with the time filled in.";const r=resolve($('#paceDay').value);$('#paceOut').innerHTML='';if(r&&r.special){$('#paceOut').innerHTML=`<p class="restday">${r.type}</p><p class="muted">Nothing to pace.</p>`;lastPace=null;return}if(!r||!r.times){$('#paceOut').innerHTML=r?'<p>Sign-on time not known for a normal-book duty yet. Enter it below.</p><input id="manOn" placeholder="Sign on HH:MM">':'<p>No duty entered.</p>';
   const m=$('#manOn');if(m)m.onchange=()=>{lastPace=null;calc(m.value)};return}calc(r.times.sign_on)}
-async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const j=await journeyMin(),son=t2m(on),arrive=son-(+S.lie),leave=arrive-j.m-(+S.margin),wake=son-(+S.ready);lastPace={leave,wake};
+async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const j=await journeyMin(),son=t2m(on),arrive=son-(+S.lie),leave=arrive-j.m-(+S.margin),wake=son-(+S.ready);lastPace={leave,wake};alarmLabels();
  $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML:'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr><tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>Wake / get up</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table><p class="muted">Journey ${j.m} min (${j.src}) + ${S.margin} min safety margin · lie-down ${S.lie} min · get-ready ${S.ready} min</p>`}
-function alarm(min,label){const h=Math.floor(((min%1440)+1440)%1440/60),m=((min%1440)+1440)%1440%60;
- location.href=`intent://alarm#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(label)};end`}
+const IS_ANDROID=/Android/i.test(navigator.userAgent);
+function alarmDate(min){const d=new Date(($('#paceDay').value||todayISO())+'T00:00:00');d.setMinutes(min);return d}
+function icsFile(min,label){const d=alarmDate(min),z=x=>String(x).padStart(2,'0'),f=x=>`${x.getFullYear()}${z(x.getMonth()+1)}${z(x.getDate())}T${z(x.getHours())}${z(x.getMinutes())}00`,e=new Date(+d+5*60e3);
+ const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//AGR Driver//EN','BEGIN:VEVENT',`UID:${+d}-${label.replace(/\W/g,'')}@agr-driver`,`DTSTAMP:${f(new Date())}`,`DTSTART:${f(d)}`,`DTEND:${f(e)}`,`SUMMARY:${label}`,'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${label}`,'TRIGGER:PT0M','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
+ const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([ics],{type:'text/calendar'}));a.download=label.replace(/\W+/g,'-').toLowerCase()+'.ics';a.click()}
+function alarm(min,label){const n=$('#alarmNote');if(!IS_ANDROID){n.innerHTML='<span class="err">Alarms work on the Android phone only.</span> <a href="#" id="icsDl">Download a calendar reminder (.ics) instead</a>';$('#icsDl').onclick=e=>{e.preventDefault();icsFile(min,label)};return}
+ const t=((min%1440)+1440)%1440,h=Math.floor(t/60),m=t%60;
+ const url=`intent://#Intent;action=android.intent.action.SET_ALARM;i.android.intent.extra.alarm.HOUR=${h};i.android.intent.extra.alarm.MINUTES=${m};S.android.intent.extra.alarm.MESSAGE=${encodeURIComponent(label)};end`;
+ let left=false;const onHide=()=>{if(document.hidden)left=true};document.addEventListener('visibilitychange',onHide);location.href=url;
+ setTimeout(()=>{document.removeEventListener('visibilitychange',onHide);if(!left){n.innerHTML='<span class="err">The Clock app did not open.</span> <a href="#" id="icsDl">Download a calendar reminder (.ics) instead</a>';$('#icsDl').onclick=e=>{e.preventDefault();icsFile(min,label)}}},2000)}
+function alarmLabels(){$('#leaveAlarm').textContent='Set leave-home alarm'+(lastPace?` (${m2t(lastPace.leave)})`:'');$('#alarmBtn').textContent='Set wake-up alarm'+(lastPace?` (${m2t(lastPace.wake)})`:'');$('#leaveAlarm').disabled=$('#alarmBtn').disabled=!lastPace}
 $('#alarmBtn').onclick=()=>lastPace&&alarm(lastPace.wake,'Wake up - sign on soon');$('#leaveAlarm').onclick=()=>lastPace&&alarm(lastPace.leave,'Leave home for AGR');
 $('#drive').onclick=()=>{location.href='https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination='+encodeURIComponent(S.depotLL||S.depot)};
 $('#paceDay').onchange=paceView;
-function rest(){$('#rest').innerHTML=S.rest.split('\n').filter(Boolean).map(x=>`<li>${esc(x)}</li>`).join('')}
 const hours=()=>LS.get('hours',[]);
 function hoursView(){$('#hTab').innerHTML='<tr><th>Date</th><th>Duty</th><th>OT</th><th>Finish</th><th>Train</th><th></th></tr>'+hours().map((h,i)=>`<tr><td>${h.date}</td><td>${esc(h.duty)}</td><td>${h.ot}</td><td>${esc(h.finish)}</td><td>${esc(h.train)}</td><td><button data-i="${i}" class="del">✕</button></td></tr>`).join('');
  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{if(confirm('Delete entry?')){const a=hours();a.splice(+b.dataset.i,1);LS.set('hours',a);hoursView()}})}
@@ -141,7 +148,7 @@ $('#hDate').value=today();$('#hDate').onchange=()=>{$('#hDuty').value=duties()[$
 $('#hAdd').onclick=()=>{const a=hours();a.push({date:$('#hDate').value,duty:scrub($('#hDuty').value),ot:+$('#hOT').value||0,finish:$('#hFin').value,train:scrub($('#hTrain').value),note:scrub($('#hNote').value)});a.sort((x,y)=>x.date.localeCompare(y.date));LS.set('hours',a);hoursView()};
 $('#hCsv').onclick=()=>{const q=v=>'"'+String(v).replace(/"/g,'""')+'"';const csv='date,duty,overtime_min,finish_point,booking_off_train,notes\n'+hours().map(h=>[h.date,h.duty,h.ot,h.finish,h.train,h.note].map(q).join(',')).join('\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`hours-${today()}.csv`;a.click()};
-const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sReady:'ready',sTT:'tt',sRest:'rest'};
+const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sReady:'ready',sTT:'tt'};
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');

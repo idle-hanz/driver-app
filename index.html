@@ -11,8 +11,8 @@
 <section id="trains"><div id="lineStatus" class="muted"></div><div class="card" id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p>
 <details class="card" id="allTrains"><summary>All trains · Find a train</summary><label for="ftNum">Find a train (train number)</label><div class="wkrow"><input id="ftNum" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 364"><button class="b" id="ftGo" style="margin:0">Find</button></div><div id="ftOut"></div><hr><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button><div id="tlist"></div></details></section>
 <section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
-<button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm (at depot)</button></div>
-<div class="card"><b>Suggested rest places</b><ul id="rest"></ul><span class="muted">Edit the list in Settings.</span></div></section>
+<button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm</button><p class="muted" id="alarmNote">These open the phone's Clock app with the time filled in.</p></div>
+</section>
 <section id="hours"><div class="card"><label>Date</label><input type="date" id="hDate"><label>Duty</label><input id="hDuty" inputmode="numeric">
 <label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
 <label>Train number taken to book-off point</label><input id="hTrain" inputmode="numeric"><label>Notes</label><input id="hNote">
@@ -27,6 +27,6 @@
 <label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">
 <label>Lie-down at the depot before sign-on (minutes)</label><input id="sLie" type="number"><label>Get-ready buffer: wake this many minutes before sign-on</label><input id="sReady" type="number">
 <label>TomTom API key (optional, free tier — stays on this phone)</label><input id="sTT">
-<label>Rest places (one per line)</label><textarea id="sRest" rows="5"></textarea>
+
 <button class="b" id="saveSet">Save settings</button><p class="muted" id="setMsg"></p></div></section>
 </main><script type="module" src="app.js"></script></body></html>
