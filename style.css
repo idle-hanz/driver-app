@@ -13,3 +13,6 @@ button.b{background:#dc241f;color:#fff;border:0;border-radius:8px;padding:12px 1
 .day{grid-template-columns:90px 80px 1fr}.chips{grid-column:1/-1;display:flex;gap:6px;margin-top:-2px}.chip{background:#2a3570;color:#cde;border:0;border-radius:16px;padding:6px 12px;font-size:14px}.chip.on{background:#2e8b57;color:#fff}
 .day.today{background:#24306a;border-left:4px solid #dc241f;padding-left:6px;border-radius:6px}.day.rest input{color:#9fd8b0}.restday{font-size:22px;font-weight:700;color:#9fd8b0}
 .day{position:relative;cursor:pointer;padding-right:26px}.chev{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:28px;color:#8fa3d8}.day:active{background:#1f2a5c}
+@keyframes sl{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}}@keyframes sr{from{transform:translateX(-40px);opacity:.4}to{transform:none;opacity:1}}
+section.slide-l{animation:sl .18s ease-out}section.slide-r{animation:sr .18s ease-out}@media (prefers-reduced-motion:reduce){section.slide-l,section.slide-r{animation:none}}
+html,body{overscroll-behavior-x:none}

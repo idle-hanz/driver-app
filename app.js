@@ -202,3 +202,12 @@ function toast(t){const d=document.createElement('div');d.className='toast';d.te
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]`)){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js');navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
+// ---- Swipe between tabs (follows the top menu order) ----
+(function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
+ const skip=el=>el.closest('input,select,textarea,button,a,summary,.pick,.chips,nav,canvas.rc.zoomed')||[...function*(e){for(;e&&e!==document.body;e=e.parentElement)yield e}(el)].some(e=>e.scrollWidth>e.clientWidth+2&&/(auto|scroll)/.test(getComputedStyle(e).overflowX));
+ document.addEventListener('touchstart',e=>{if(e.touches.length!==1||(window.visualViewport&&visualViewport.scale>1.01)||skip(e.target)){s=null;return}s={x:e.touches[0].clientX,y:e.touches[0].clientY,t:Date.now()}},{passive:true});
+ document.addEventListener('touchmove',e=>{if(e.touches.length>1)s=null},{passive:true});
+ document.addEventListener('touchend',e=>{if(!s||e.changedTouches.length!==1)return;const dx=e.changedTouches[0].clientX-s.x,dy=e.changedTouches[0].clientY-s.y,dt=Date.now()-s.t;s=null;
+  if(Math.abs(dx)<60||Math.abs(dx)<=Math.abs(dy)*1.5||dt>600)return;const cur=document.querySelector('nav button.on').dataset.t,i=order.indexOf(cur)+(dx<0?1:-1);if(i<0||i>=order.length)return;
+  const nb=document.querySelector(`nav button[data-t="${order[i]}"]`);if(order[i]==='card'&&cur==='week'){}nb.click();nb.scrollIntoView({inline:'nearest',block:'nearest'});
+  const sec=$('#'+order[i]);sec.classList.remove('slide-l','slide-r');void sec.offsetWidth;sec.classList.add(dx<0?'slide-l':'slide-r')},{passive:true});})();
