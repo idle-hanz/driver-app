@@ -30,7 +30,7 @@ function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').val
   <div>${r?(r.special?`<b class="${v==='RD'?'restday':''}">${r.type}</b>`:`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${r.times?` On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Off ${r.times.sign_off}`:''}${r.warn?` <span class="err">${r.warn}</span>`:''}`):''}</div>
   <div class="chips">${['RD'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
  $('#days').innerHTML=h;
- document.querySelectorAll('#days .day').forEach(row=>row.onclick=e=>{if(e.target.closest('input,button'))return;const d=row.dataset.day;document.querySelector('nav button[data-t=card]').click();$('#cardDay').value=d;cardView()});
+ document.querySelectorAll('#days .day').forEach(row=>row.onclick=e=>{if(e.target.closest('input,button'))return;const d=row.dataset.day;cardFromWeek=d;document.querySelector('nav button[data-t=card]').click()});
  document.querySelectorAll('#days .chip').forEach(b=>b.onclick=()=>{const du=duties();if(du[b.dataset.d]===b.dataset.c)delete du[b.dataset.d];else du[b.dataset.d]=b.dataset.c;LS.set('duties',du);weekView()});
  document.querySelectorAll('#days input').forEach(i=>i.onchange=()=>{const du=duties(),v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d];LS.set('duties',du);weekView()});
  fillDays()}
@@ -39,10 +39,13 @@ function normCode(v){v=String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'
 $('#wkPrev').onclick=()=>{const o=$('#wk');if(o.selectedIndex>0){o.selectedIndex--;weekView()}};$('#wkNext').onclick=()=>{const o=$('#wk');if(o.selectedIndex<o.options.length-1){o.selectedIndex++;weekView()}};
 $('#wkNow').onclick=()=>{$('#wk').value=sat(today());weekView()};
 function fillDays(){const s=addD($('#wk').value,-6),o=[...Array(7)].map((_,i)=>{const d=addD(s,i);const v=duties()[d];return`<option value="${d}">${d===today()?'▶ ':''}${DAYS[i]} ${d} — ${esc(SPECIAL[v]||v||'no duty')}</option>`}).join('');
- for(const id of['#cardDay','#paceDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
+ for(const id of['#paceDay']){const v=$(id).value;$(id).innerHTML=o;if(v)$(id).value=v;else{$(id).value=today();if(!$(id).value)$(id).selectedIndex=0}}}
 $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days input').forEach(i=>{const v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d]});LS.set('duties',du);weekView();$('#wkMsg').textContent='Saved.'};
 $('#wk').onchange=weekView;
-function cardView(){const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
+let cardFromWeek=null;
+function todayISO(){const d=NOW();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
+function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:00:00');$('#cardHead').innerHTML=`<p><b>${d===t?'Today':''} ${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}</b>${d!==t?' · <a href="#" id="backToday">Back to today</a>':''}</p>`;const bt=$('#backToday');if(bt)bt.onclick=e=>{e.preventDefault();$('#cardDay').value=t;cardView()}}
+function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();cardHead();const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b>${r.warn?' <span class="err">'+r.warn+'</span>':''}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
  if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+='<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
@@ -57,7 +60,7 @@ $('#bNotice').onchange=()=>{const c=DATA.cards[$('#bNotice').value]||{};$('#bDut
 $('#bDuty').onchange=()=>{const n=$('#bNotice').value,d=$('#bDuty').value,c=(DATA.cards[n]||{})[d];if(!c)return;const nn=DATA.notices.find(x=>x.notice===n),t=nn&&nn.duties[d];
  $('#cardInfo').innerHTML=`<p><span class="tag eng">Engineering</span> Duty <b>${d}</b></p>`+(t?`<p>On <b>${t.sign_on}</b> · Length ${t.length} · Off <b>${t.sign_off}</b></p>`:'')+'<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+c.pickups.map(p=>`<tr><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`).join('')+'</table>';
  const el=$('#cardPages');renderPages(el,c.pdf,c.pages,el.clientWidth||innerWidth-24).catch(e=>{el.innerHTML='<p class="err">Could not draw the card: '+esc(e.message)+'</p>'})};
-$('#cardDay').onchange=cardView;
+
 const STNS={'940GZZLUASG':'Arnos Grove','940GZZLUCKS':'Cockfosters','940GZZLUOAK':'Oakwood','940GZZLUSGT':'Southgate','940GZZLUBDS':'Bounds Green','940GZZLUACT':'Acton Town','940GZZLUNFD':'Northfields','940GZZLUHR4':'Heathrow T4','940GZZLUHRC':'Heathrow T2&3','940GZZLUUXB':'Uxbridge'};
 $('#stn').innerHTML=Object.entries(STNS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('');
 async function trains(){$('#tlist').textContent='Loading…';try{const r=await fetch(`https://api.tfl.gov.uk/Line/piccadilly/Arrivals/${$('#stn').value}`);const a=(await r.json()).sort((x,y)=>x.timeToStation-y.timeToStation);
@@ -96,6 +99,25 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
     else if(ap)h+=`<p class="muted">${T}is on an earlier trip (due at your platform ${new Date(ap.expectedArrival).toTimeString().slice(0,5)}). Your ${p.time} pick-up is not predicted yet.</p>`;
     else h+=`<p class="muted">${T}not yet predicted at your pick-up platform.</p>`}}}
  out.innerHTML=h+'<p class="muted" style="margin-top:12px">Other pick-ups on this duty:</p>'+sel;bindSel();trTimer=setTimeout(myTrains,30000)}
+async function lineStatus(){try{const j=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Status')).json();const s=(j[0]&&j[0].lineStatuses)||[];
+ $('#lineStatus').innerHTML='<p>Piccadilly line: '+s.map(x=>`<b>${esc(x.statusSeverityDescription)}</b>${x.reason?' — '+esc(x.reason):''}`).join('; ')+'</p>'}catch(e){$('#lineStatus').textContent=''}}
+let ftTimer=null;
+async function findTrain(){clearTimeout(ftTimer);const num=normV(($('#ftNum').value||'').replace(/\D/g,'')),out=$('#ftOut');if(!num){out.innerHTML='';return}
+ out.innerHTML='<p class="muted">Looking up '+esc(num)+'…</p>';let all;
+ try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){out.innerHTML='<p class="err">No live data (offline?).</p>';ftTimer=setTimeout(findTrain,30000);return}
+ const T=`<span class="tno">${esc(num)}</span>`,preds=all.filter(a=>normV(a.vehicleId)===num).sort((a,b)=>a.timeToStation-b.timeToStation);
+ // on today's duty?
+ const r=resolve(todayISO()),mine=r&&r.card?r.card.pickups.filter(p=>normV(p.train)===num):[];
+ const duty=mine.length?`<p class="tag eng">On today's duty ${esc(r.duty)}</p>`+mine.map(p=>`<p>${T}Pick up <b>${p.time}</b> at ${esc(p.at)} · ${p.rev?'Reverser':p.dir}${p.relief?' · relieved '+p.relief:''}</p>`).join(''):'<p class="muted">Not on today\'s duty card.</p>';
+ if(!preds.length){out.innerHTML=`<div class="trainhead"><div class="trainno">${esc(num)}</div></div><p>Train ${esc(num)} is not in TfL's live Piccadilly predictions right now. It may not be in service (e.g. in a depot or siding), or not yet within the prediction window (TfL only predicts the next stops of trains already running).</p>${duty}<p class="muted">Checking again every 30 s. <a href="#" id="ftRetry">Retry now</a></p>`;$('#ftRetry').onclick=e=>{e.preventDefault();findTrain()};ftTimer=setTimeout(findTrain,30000);return}
+ const f=preds[0],uniq=preds.filter((a,i,l)=>l.findIndex(b=>b.naptanId===a.naptanId&&b.platformName===a.platformName)===i),hm=x=>new Date(x).toTimeString().slice(0,5);
+ const agr=uniq.filter(a=>a.naptanId==='940GZZLUASG'),upd=preds.map(a=>a.timestamp).sort().pop();
+ out.innerHTML=`<div class="trainhead"><div class="trainno">${esc(num)}</div><div><div>${T}Now: <b>${esc(f.currentLocation||'—')}</b></div><div>${esc(f.platformName||'')} · towards <b>${esc(f.towards||f.destinationName||'—')}</b>${f.destinationName&&f.towards!==f.destinationName?' (destination '+esc(f.destinationName.replace(' Underground Station',''))+')':''}</div></div></div>
+ <p>${T}Next station: <b>${esc(f.stationName.replace(' Underground Station',''))}</b> in ${Math.max(0,Math.round(f.timeToStation/60))} min (${hm(f.expectedArrival)})</p>
+ ${uniq.slice(0,8).map(a=>`<p class="muted">${T}${esc(a.stationName.replace(' Underground Station',''))} ${hm(a.expectedArrival)} · ${esc(a.platformName||'')}</p>`).join('')}
+ <p>${T}Arnos Grove: ${agr.length?agr.map(a=>`due <b>${hm(a.expectedArrival)}</b> (${esc(a.platformName)})`).join(' · '):'not predicted at AGR in the current window (either direction)'}</p>
+ ${duty}<p class="muted">TfL data updated ${upd?hm(upd):'—'}. Information only. Refreshing every 30 s.</p>`;ftTimer=setTimeout(findTrain,30000)}
+$('#ftGo').onclick=findTrain;$('#ftNum').addEventListener('keydown',e=>{if(e.key==='Enter')findTrain()});
 function bindSel(){document.querySelectorAll('#myTrains .pick button').forEach(b=>b.onclick=()=>{trSel=b.dataset.i==='auto'?null:+b.dataset.i;myTrains()})}
 $('#allTrains').addEventListener('toggle',()=>{if($('#allTrains').open)trains()});
 
@@ -123,7 +145,7 @@ const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
- ({card:cardView,trains:()=>{trSel=null;myTrains()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
+ ({card:()=>{$('#cardDay').value=cardFromWeek||todayISO();cardFromWeek=null;cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=async e=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''};

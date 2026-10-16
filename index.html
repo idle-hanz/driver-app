@@ -7,9 +7,9 @@
 <div id="days"></div><button class="b" id="saveWeek">Save week</button>
 
 <p class="muted" id="wkMsg"></p></div></section>
-<section id="card"><div class="card"><label>Day</label><select id="cardDay"></select><div id="cardInfo"></div><details id="browse"><summary>Look up any running card on this phone</summary><label>Notice</label><select id="bNotice"></select><label>Duty</label><select id="bDuty"></select></details></div><div id="cardPages"></div></section>
-<section id="trains"><div class="card" id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p>
-<details class="card" id="allTrains"><summary>All trains</summary><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button><div id="tlist"></div></details></section>
+<section id="card"><div class="card"><input type="hidden" id="cardDay"><div id="cardHead"></div><div id="cardInfo"></div><details id="browse"><summary>Look up any running card on this phone</summary><label>Notice</label><select id="bNotice"></select><label>Duty</label><select id="bDuty"></select></details></div><div id="cardPages"></div></section>
+<section id="trains"><div id="lineStatus" class="muted"></div><div class="card" id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p>
+<details class="card" id="allTrains"><summary>All trains · Find a train</summary><label for="ftNum">Find a train (train number)</label><div class="wkrow"><input id="ftNum" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 364"><button class="b" id="ftGo" style="margin:0">Find</button></div><div id="ftOut"></div><hr><label>Station</label><select id="stn"></select><button class="b s" id="refT">Refresh</button><div id="tlist"></div></details></section>
 <section id="pace"><div class="card"><label>Day</label><select id="paceDay"></select><div id="paceOut"></div>
 <button class="b" id="drive">Drive to work</button><button class="b s" id="leaveAlarm">Set leave-home alarm</button><button class="b s" id="alarmBtn">Set wake-up alarm (at depot)</button></div>
 <div class="card"><b>Suggested rest places</b><ul id="rest"></ul><span class="muted">Edit the list in Settings.</span></div></section>
