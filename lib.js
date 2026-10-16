@@ -25,14 +25,15 @@ async function pageLines(page){const tc=await page.getTextContent(),rows=[];
  rows.sort((a,b)=>b.y-a.y);const out=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim());
  out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.ph=page.view[3];return out}
 const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?\b)?)/;
-function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE);if(!m)return;let relief='';for(const k of lines.slice(j+1)){if(PLACE.test(k))break;const rr=k.match(/Relieved at (\d\d:\d\d)/);if(rr){relief=rr[1];break}}let place=m[3],tok=place.split(' '),dir={E:'Eastbound',W:'Westbound'}[tok[tok.length-1]];
+function pickups(lines){const out=[];lines.forEach((l,j)=>{const m=l.match(PLACE);if(!m)return;let relief='',endAt='';for(const k of [l,...lines.slice(j+1)]){if(k!==l&&PLACE.test(k))break;const rr=k.match(/Relieved at (\d\d:\d\d)/);if(rr){relief=rr[1];break}
+  const ms=[...k.matchAll(/(?:\d\d:\d\d(?::? ?\d\d)?\s+)([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?)?)\b/g)];if(ms.length)endAt=ms[ms.length-1][1];else{const bare=k.match(/^([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?)?)$/);if(bare)endAt=bare[1]}}let place=m[3],tok=place.split(' '),dir={E:'Eastbound',W:'Westbound'}[tok[tok.length-1]];
  // 'CFS DTE'/'DTW' are depot road names, not directions
  if(!dir)for(const k of lines.slice(j,j+3)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dir={E:'Eastbound',W:'Westbound'}[z[z.length-1][2]];break}}
  // Reverser rule: bare station (no E/W/SG/DT) + Stand = train arrives in the opposite direction to the one it departs in
  let rev='';if(tok.length===1&&tok[0]==='CFS'&&!/\bStand\b/.test(l)&&!/^\s*Stand\b/.test(lines[j+1]||''))dir='Westbound'; // Cockfosters is a terminus: a bare CFS start departs westbound
  if(tok.length===1&&(/\bStand\b/.test(l)||/^(\d\d:\d\d(:\d\d)? )?Stand\b/.test(lines[j+1]||''))){let dep=null;for(const k of lines.slice(j+1,j+6)){const z=[...k.matchAll(/\b([A-Z]{2,4}) (E|W)\b/g)];if(z.length){dep=z[0][2];break}}
   if(dep){rev={E:'Eastbound',W:'Westbound'}[dep];dir={E:'Westbound',W:'Eastbound'}[dep]}}
- out.push({train:m[1],time:m[2],at:place,dir:dir||'see card',rev,relief,kind:tok.some(x=>/^(SG|DT)[EW]?$/.test(x))?'Depot road / sidings':'Platform'})});return out}
+ out.push({train:m[1],time:m[2],at:place,dir:dir||'see card',rev,relief,endAt,kind:tok.some(x=>/^(SG|DT)[EW]?$/.test(x))?'Depot road / sidings':'Platform'})});return out}
 // Lenient: works with renamed copies ("RC-P26145-AGR (1).pdf", "document.pdf"), empty MIME types, and any import order.
 const DAYN={Sunday:'Sun',Monday:'Mon',Tuesday:'Tue',Wednesday:'Wed',Thursday:'Thu',Friday:'Fri',Saturday:'Sat'};
 function guessNotice(name,text,notices,rcPages){
@@ -66,7 +67,7 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
-export const PARSER_VERSION=4;
+export const PARSER_VERSION=5;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
  const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}

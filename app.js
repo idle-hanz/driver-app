@@ -142,18 +142,23 @@ $('#alarmBtn').onclick=()=>lastPace&&alarm(lastPace.wake,'Wake up - sign on soon
 $('#drive').onclick=()=>{location.href='https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination='+encodeURIComponent(S.depotLL||S.depot)};
 $('#paceDay').onchange=paceView;
 const hours=()=>LS.get('hours',[]);
-function hoursView(){$('#hTab').innerHTML='<tr><th>Date</th><th>Time</th><th>Station</th><th>Duty</th><th>OT</th><th>Finish</th><th>Train</th><th></th></tr>'+hours().map((h,i)=>`<tr><td>${h.date}</td><td>${esc(h.time||'')}</td><td>${esc(h.station||'')}</td><td>${esc(h.duty)}</td><td>${h.ot}</td><td>${esc(h.finish)}</td><td>${esc(h.train)}</td><td><button data-i="${i}" class="del">✕</button></td></tr>`).join('');
+function hoursView(){$('#hTab').innerHTML='<tr><th>Date</th><th>Time</th><th>Station</th><th>Duty</th><th>OT</th><th>Finish</th><th>Driven</th><th>Back on</th><th></th></tr>'+hours().map((h,i)=>`<tr><td>${h.date}</td><td>${esc(h.time||'')}</td><td>${esc(h.station||'')}</td><td>${esc(h.duty)}</td><td>${h.ot}</td><td>${esc(h.finish)}</td><td>${esc(h.driven||'')}</td><td>${esc(h.train)}</td><td><button data-i="${i}" class="del">✕</button></td></tr>`).join('');
  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{if(confirm('Delete entry?')){const a=hours();a.splice(+b.dataset.i,1);LS.set('hours',a);hoursView()}})}
-$('#hDate').value=today();$('#hDate').onchange=()=>{$('#hDuty').value=duties()[$('#hDate').value]||''};$('#hDuty').value=duties()[today()]||'';
-$('#hAdd').onclick=()=>{const a=hours();a.push({date:$('#hDate').value,time:$('#hTime').value,station:scrub($('#hStation').value),duty:scrub($('#hDuty').value),ot:+$('#hOT').value||0,finish:$('#hFin').value,train:scrub($('#hTrain').value),note:scrub($('#hNote').value)});a.sort((x,y)=>x.date.localeCompare(y.date));LS.set('hours',a);hoursView()};
-$('#hCsv').onclick=()=>{const q=v=>'"'+String(v).replace(/"/g,'""')+'"';const csv='date,arrived_time,book_off_station,duty,overtime_min,finish_point,booking_off_train,notes\n'+hours().map(h=>[h.date,h.time||'',h.station||'',h.duty,h.ot,h.finish,h.train,h.note].map(q).join(',')).join('\n');
+$('#hDate').value=today();$('#hDate').onchange=()=>{$('#hDuty').value=duties()[$('#hDate').value]||'';hoursDefaults()};$('#hDuty').value=duties()[today()]||'';
+$('#hAdd').onclick=()=>{const a=hours();a.push({date:$('#hDate').value,time:$('#hTime').value,station:scrub($('#hStation').value),duty:scrub($('#hDuty').value),ot:+$('#hOT').value||0,finish:$('#hFin').value,driven:scrub($('#hDriven').value),train:scrub($('#hSame').checked?$('#hDriven').value:$('#hTrain').value),note:scrub($('#hNote').value)});a.sort((x,y)=>x.date.localeCompare(y.date));LS.set('hours',a);hoursView()};
+$('#hCsv').onclick=()=>{const q=v=>'"'+String(v).replace(/"/g,'""')+'"';const csv='date,arrived_time,book_off_station,duty,overtime_min,finish_point,train_driven,train_travelled_back_on,notes\n'+hours().map(h=>[h.date,h.time||'',h.station||'',h.duty,h.ot,h.finish,h.driven||'',h.train,h.note].map(q).join(',')).join('\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));a.download=`hours-${today()}.csv`;a.click()};
+function syncSame(){const s=$('#hSame').checked;$('#hTrain').disabled=s;if(s)$('#hTrain').value=$('#hDriven').value}
+$('#hSame').onchange=syncSame;$('#hDriven').oninput=syncSame;
+function lastDriven(date){const r=resolve(date);if(!r||!r.card||!r.card.pickups.length)return null;return r.card.pickups[r.card.pickups.length-1]}
+function hoursDefaults(){const p=lastDriven($('#hDate').value);$('#hDriven').value=p?normV(p.train):'';$('#hSame').checked=true;syncSame();return p}
+const CODE2NAME=c=>{const n=CODE[c];return n&&STATIONS?((STATIONS.find(s=>s[0]===n)||[])[1]||''):''};
 // ---- Arrived at book-off: one-shot foreground location -> nearest Piccadilly station -> TfL arrivals there ----
 let STATIONS=null;async function stations(){if(!STATIONS)STATIONS=await (await fetch('stations.json')).json();return STATIONS}
 function distM(a,b,c,d){const R=6371e3,r=x=>x*Math.PI/180,dl=r(c-a),dn=r(d-b),h=Math.sin(dl/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
 function getPos(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('Location is not available on this device.'));navigator.geolocation.getCurrentPosition(res,e=>rej(new Error(e.code===1?'Location permission denied.':e.code===3?'Location timed out.':'Location unavailable.')),{enableHighAccuracy:true,timeout:15000,maximumAge:0})})}
 $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`,date=todayISO();
- $('#hDate').value=date;$('#hTime').value=hm;$('#hDuty').value=duties()[date]||'';out.innerHTML='<p class="muted">Getting your location…</p>';
+ $('#hDate').value=date;$('#hTime').value=hm;$('#hDuty').value=duties()[date]||'';const last=hoursDefaults();out.innerHTML='<p class="muted">Getting your location…</p>';
  const r=resolve(date);if(r&&r.times&&r.times.sign_off&&/^\d\d:\d\d/.test(r.times.sign_off)){let d=t2m(hm)-t2m(r.times.sign_off.slice(0,5));if(d<-720)d+=1440;if(d>720)d-=1440;$('#hOT').value=Math.max(0,d)}
  let st=null,dist=0;
  try{const p=await getPos(),list=(await stations()).map(s=>({id:s[0],name:s[1],d:distM(p.coords.latitude,p.coords.longitude,s[2],s[3])}));
@@ -165,18 +170,21 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
  $('#hStation').value=st.name;$('#hFin').value=bookOff?'Finished on platform':'Book-off travel';
  let h=`<p>Nearest: <b>${esc(st.name)}</b> (${dist} m) · ${bookOff?'at your book-off place':'not your book-off place, so book-off travel'}</p>`;
  try{const arr=await (await fetch(`https://api.tfl.gov.uk/Line/piccadilly/Arrivals/${st.id}`)).json();
-  const cand=arr.filter(a=>a.timeToStation<=180).sort((a,b)=>a.timeToStation-b.timeToStation);
+  const cand=arr.filter(a=>a.timeToStation<=180).sort((a,b)=>a.timeToStation-b.timeToStation).filter((a,i,l)=>l.findIndex(b=>normV(b.vehicleId)===normV(a.vehicleId))===i);
   const mine=r&&r.card?r.card.pickups.map(p=>normV(p.train)):[];
-  if(cand.length){const best=cand[0];$('#hTrain').value=normV(best.vehicleId);
-   h+=`<p>Best match from TfL arrivals: <span class="tno">${esc(normV(best.vehicleId))}</span> ${esc(best.platformName||'')} · ${esc(best.currentLocation||'')} (${Math.round(best.timeToStation/60)} min)${mine.includes(normV(best.vehicleId))?' · on your duty card':''}</p><p class="muted">Not certain. Tap another if that wasn't your train:</p><div class="pick">${cand.slice(1,6).map(a=>`<button data-v="${esc(normV(a.vehicleId))}">${esc(normV(a.vehicleId))} · ${esc((a.platformName||'').split(' - ')[0])} · ${Math.round(a.timeToStation/60)}m</button>`).join('')}</div>`}
+  const endAt=last&&last.endAt||'',endCode=endAt.split(' ')[0],intoDepot=/\b(SG|DT)[EW]?\b/.test(endAt),elsewhere=endCode&&CODE2NAME(endCode)&&!st.name.startsWith(CODE2NAME(endCode));
+  if(last)h+=`<p>Train driven (from your card): <span class="tno">${esc(normV(last.train))}</span> last move ends at ${esc(endAt||'?')}${intoDepot?' (depot/siding)':''}</p>`;
+  if(intoDepot||elsewhere){$('#hSame').checked=false;syncSame();$('#hTrain').value='';h+=`<p class="muted">${intoDepot?'Your last train went into the depot/siding':'You booked off away from where your last train finished'}, so the train travelled back on is probably different.</p>`}
+  if(cand.length){const best=cand[0];if(intoDepot||elsewhere||!last){$('#hSame').checked=false;syncSame();$('#hTrain').value=normV(best.vehicleId)}
+   h+=`<p>Travelled back on — best match from TfL arrivals: <span class="tno">${esc(normV(best.vehicleId))}</span> ${esc(best.platformName||'')} · ${esc(best.currentLocation||'')} (${Math.round(best.timeToStation/60)} min)${mine.includes(normV(best.vehicleId))?' · on your duty card':''}</p><p class="muted">Not certain. Tap another if that wasn't your train:</p><div class="pick">${cand.slice(1,6).map(a=>`<button data-v="${esc(normV(a.vehicleId))}">${esc(normV(a.vehicleId))} · ${esc((a.platformName||'').split(' - ')[0])} · ${Math.round(a.timeToStation/60)}m</button>`).join('')}</div>`}
   else h+='<p class="muted">No train at or due at this station in TfL arrivals in the last ~3 min. Enter the train number by hand.</p>'}
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
- out.innerHTML=h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hTrain').value=b.dataset.v})};
+ out.innerHTML=h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
 const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sReady:'ready',sTT:'tt'};
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
- ({card:()=>{$('#cardDay').value=cardFromWeek||todayISO();cardFromWeek=null;cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:paceView,hours:hoursView,set:setView,week:weekView})[b.dataset.t]()});
+ ({card:()=>{$('#cardDay').value=cardFromWeek||todayISO();cardFromWeek=null;cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:paceView,hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
 function summary(){const n=DATA.notices.length,c=Object.values(DATA.cards).reduce((a,v)=>a+Object.keys(v).length,0);$('#dataSummary').textContent=`On this phone: ${n} notices, ${c} running cards`+((DATA.normal||[]).map(b=>`, normal duty book ${b.timetable} (${b.duties.length} duties)`).join(''))+'.'}
 $('#fCsv').onchange=async e=>{let r;try{r=await importCsvs([...e.target.files].filter(f=>!/\.pdf$/i.test(f.name)))}catch(err){$('#impMsg').className='err';$('#impMsg').textContent='CSV import failed: '+(err&&err.message||err);return}$('#impMsg').className='ok';await reload();$('#impMsg').textContent=`Imported ${r.pack} notice list rows and ${r.dut} duties.`;weekView();e.target.value=''};
