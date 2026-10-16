@@ -121,12 +121,32 @@ function bindSel(){document.querySelectorAll('#myTrains .pick button').forEach(b
 $('#allTrains').addEventListener('toggle',()=>{if($('#allTrains').open)trains()});
 
 $('#stn').onchange=trains;
-async function journeyMin(){if(S.tt&&S.homeLL&&S.depotLL){try{const r=await fetch(`https://api.tomtom.com/routing/1/calculateRoute/${S.homeLL}:${S.depotLL}/json?traffic=true&key=${encodeURIComponent(S.tt)}`);const j=await r.json();return{m:Math.ceil(j.routes[0].summary.travelTimeInSeconds/60),src:'TomTom live traffic'}}catch(e){}}return{m:+S.journey,src:'usual journey time'}}
+// ---- Drive time: TomTom Routing with departAt (typical traffic for that weekday/time), cached per weekday+hour ----
+const pad2=x=>String(x).padStart(2,'0'),localISO=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}:00`;
+const ttCache=()=>LS.get('ttCache',{}),cacheKey=d=>`${d.getDay()}-${d.getHours()}`;
+async function ttRoute(depart){const u=`https://api.tomtom.com/routing/1/calculateRoute/${S.homeLL.replace(/\s/g,'')}:${S.depotLL.replace(/\s/g,'')}/json?traffic=true&routeType=fastest&travelMode=car&routeRepresentation=summaryOnly&departAt=${encodeURIComponent(localISO(depart))}&key=${encodeURIComponent(S.tt)}`;
+ const r=await fetch(u);if(!r.ok)throw new Error('TomTom '+r.status);const j=await r.json();return Math.ceil(j.routes[0].summary.travelTimeInSeconds/60)}
+// arriveMin: minutes from midnight of `date` when you want to arrive (sign-on minus lie-down). Returns {m, leave, src}
+async function driveTime(date,arriveMin){const base=new Date(date+'T00:00:00'),at=m=>{const d=new Date(base);d.setMinutes(m);return d};
+ let m=+S.journey,leave=arriveMin-m-(+S.margin);
+ if(S.tt&&S.homeLL&&S.depotLL){try{for(let k=0;k<2;k++){const t=await ttRoute(at(leave));const changed=t!==m;m=t;leave=arriveMin-m-(+S.margin);if(!changed)break}
+   const c=ttCache();c[cacheKey(at(leave))]=m;LS.set('ttCache',c);return{m,leave,src:'TomTom',tt:true}}
+  catch(e){const c=ttCache()[cacheKey(at(leave))];if(c){m=c;leave=arriveMin-m-(+S.margin);return{m,leave,src:'TomTom, saved typical for this weekday and hour',tt:true}}}}
+ return{m,leave,src:'estimate, no traffic data',tt:false}}
 let lastPace=null;
 async function paceView(){lastPace=null;alarmLabels();$('#alarmNote').textContent="These open the phone's Clock app with the time filled in.";const r=resolve($('#paceDay').value);$('#paceOut').innerHTML='';if(r&&r.special){$('#paceOut').innerHTML=`<p class="restday">${r.type}</p><p class="muted">Nothing to pace.</p>`;lastPace=null;return}if(!r||!r.times){$('#paceOut').innerHTML=r?'<p>Sign-on time not known for a normal-book duty yet. Enter it below.</p><input id="manOn" placeholder="Sign on HH:MM">':'<p>No duty entered.</p>';
   const m=$('#manOn');if(m)m.onchange=()=>{lastPace=null;calc(m.value)};return}calc(r.times.sign_on)}
-async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const j=await journeyMin(),son=t2m(on),arrive=son-(+S.lie),leave=arrive-j.m-(+S.margin),wake=son-(+S.ready);lastPace={leave,wake};alarmLabels();
- $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML:'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr><tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>Wake / get up</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table><p class="muted">Journey ${j.m} min (${j.src}) + ${S.margin} min safety margin · lie-down ${S.lie} min · get-ready ${S.ready} min</p>`}
+async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const date=$('#paceDay').value,r=resolve(date),son=t2m(on),arrive=son-(+S.lie);
+ const pk=r&&((r.card&&r.card.pickups)||(r.compact&&r.compact.pickups))||[],first=pk[0];let wake,wakeTxt;
+ if(first&&!r.cover&&!r.spare){wake=t2m(first.time)-10;wakeTxt=`Wake up (10 min before ${esc(first.train)} pick-up ${first.time})`}else{wake=son-10;wakeTxt='Wake up (10 min before sign-on)'}
+ $('#paceOut').innerHTML+='<p class="muted" id="paceBusy">Working out drive time…</p>';
+ const j=await driveTime(date,arrive),leave=j.leave;lastPace={leave,wake};alarmLabels();
+ $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML.replace(/<p class="muted" id="paceBusy">.*?<\/p>/,''):'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr><tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table>
+ <p>${j.tt?`Typical drive at ${m2t(leave)}: <b>${j.m} min</b> (${j.src})`:`Drive ${j.m} min (<span class="err">${j.src}</span>)`} + ${S.margin} min safety margin · lie-down ${S.lie} min</p>`}
+$('#geoHome').onclick=async()=>{const g=$('#geoMsg');g.textContent='Getting your location…';try{const p=await getPos();S.homeLL=`${p.coords.latitude.toFixed(5)},${p.coords.longitude.toFixed(5)}`;$('#sHomeLL').value=S.homeLL;LS.set('settings',S);g.textContent='Home saved on this phone.'}catch(e){g.textContent=e.message+' Enter lat,lon by hand.'}};
+$('#geoDepot').onclick=async()=>{const g=$('#geoMsg'),key=$('#sTT').value.trim()||S.tt,q=$('#sDepot').value.trim()||S.depot;if(!key){g.textContent='Add your TomTom key first, or type the depot lat,lon.';return}
+ g.textContent='Looking up the depot…';try{const j=await (await fetch(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(q)}.json?countrySet=GB&limit=1&key=${encodeURIComponent(key)}`)).json();const p=j.results&&j.results[0]&&j.results[0].position;if(!p)throw new Error('Address not found.');
+  S.depotLL=`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;$('#sDepotLL').value=S.depotLL;LS.set('settings',S);g.textContent=`Depot set to ${S.depotLL} (${esc(j.results[0].address&&j.results[0].address.freeformAddress||q)}). Check it on a map.`}catch(e){g.textContent='Lookup failed: '+e.message+' Type lat,lon by hand.'}};
 const IS_ANDROID=/Android/i.test(navigator.userAgent);
 function alarmDate(min){const d=new Date(($('#paceDay').value||todayISO())+'T00:00:00');d.setMinutes(min);return d}
 function icsFile(min,label){const d=alarmDate(min),z=x=>String(x).padStart(2,'0'),f=x=>`${x.getFullYear()}${z(x.getMonth()+1)}${z(x.getDate())}T${z(x.getHours())}${z(x.getMinutes())}00`,e=new Date(+d+5*60e3);
@@ -180,7 +200,7 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
   else h+='<p class="muted">No train at or due at this station in TfL arrivals in the last ~3 min. Enter the train number by hand.</p>'}
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
  out.innerHTML=h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
-const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sReady:'ready',sTT:'tt'};
+const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sTT:'tt'};
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
