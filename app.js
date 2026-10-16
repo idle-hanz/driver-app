@@ -43,7 +43,7 @@ $('#saveWeek').onclick=()=>{const du=duties();document.querySelectorAll('#days i
 $('#wk').onchange=weekView;
 let cardFromWeek=null;
 function todayISO(){const d=NOW();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
-function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:00:00');$('#cardHead').innerHTML=`<p><b>${d===t?'Today':''} ${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}</b>${d!==t?' · <a href="#" id="backToday">Back to today</a>':''}</p>`;const bt=$('#backToday');if(bt)bt.onclick=e=>{e.preventDefault();$('#cardDay').value=t;setHash('card');cardView()}}
+function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:00:00');$('#cardHead').innerHTML=`<p><b>${d===t?'Today':''} ${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}</b>${d!==t?' · <a href="#" id="backToday">Back to today</a>':''}</p>`;const bt=$('#backToday');if(bt)bt.onclick=e=>{e.preventDefault();$('#cardDay').value=t;setHash('card/'+t);cardView()}}
 function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();cardHead();const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b>${r.warn?' <span class="err">'+r.warn+'</span>':''}</p>`;
  if(r.times)h+=`<p>On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
@@ -231,3 +231,22 @@ if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;nav
   if(Math.abs(dx)<60||Math.abs(dx)<=Math.abs(dy)*1.5||dt>600)return;const cur=document.querySelector('nav button.on').dataset.t,i=order.indexOf(cur)+(dx<0?1:-1);if(i<0||i>=order.length)return;
   const nb=document.querySelector(`nav button[data-t="${order[i]}"]`);if(order[i]==='card'&&cur==='week'){}nb.click();nb.scrollIntoView({inline:'nearest',block:'nearest'});
   const sec=$('#'+order[i]);sec.classList.remove('slide-l','slide-r');void sec.offsetWidth;sec.classList.add(dx<0?'slide-l':'slide-r')},{passive:true});})();
+// ---- Card tab: overscroll past bottom/top pages to next/previous day ----
+(function(){const cardOn=()=>{const b=document.querySelector('nav button.on');return b&&b.dataset.t==='card'};
+ const sync=()=>document.documentElement.classList.toggle('cardtab',cardOn());new MutationObserver(sync).observe(document.querySelector('nav'),{subtree:true,attributes:true,attributeFilter:['class']});sync();
+ const hint=document.createElement('div');hint.id='pageHint';hint.className='pagehint';document.body.appendChild(hint);
+ const addDay=(d,n)=>{const x=new Date(d+'T12:00:00');x.setDate(x.getDate()+n);return`${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`};
+ const lbl=d=>{const x=new Date(d+'T12:00:00');return`${DAYS[x.getDay()].slice(0,3)} ${d.slice(8)}/${d.slice(5,7)}`};
+ const se=document.scrollingElement,atBottom=()=>se.scrollTop+innerHeight>=se.scrollHeight-2,atTop=()=>se.scrollTop<=1;
+ let s=null;const zoomed=()=>window.visualViewport&&visualViewport.scale>1.01,hide=()=>{hint.classList.remove('show','ready')};
+ document.addEventListener('touchstart',e=>{s=null;if(!cardOn()||e.touches.length!==1||zoomed()||e.target.closest('input,select,textarea,canvas.rc.zoomed'))return;
+  s={y:e.touches[0].clientY,x:e.touches[0].clientX,t:Date.now(),bot:atBottom(),top:atTop()}},{passive:true});
+ document.addEventListener('touchmove',e=>{if(!s)return;if(e.touches.length>1||zoomed()){s=null;hide();return}const dy=e.touches[0].clientY-s.y,dx=e.touches[0].clientX-s.x;
+  if(Math.abs(dx)>Math.abs(dy)){hide();return}const d=$('#cardDay').value||todayISO();
+  if(dy<-20&&s.bot&&atBottom()){hint.textContent=`${-dy>80?'Release for':'Pull for'} ${lbl(addDay(d,1))} ›`;hint.className='pagehint show bottom'+(-dy>80?' ready':'')}
+  else if(dy>20&&s.top&&atTop()){hint.textContent=`‹ ${dy>80?'Release for':'Pull for'} ${lbl(addDay(d,-1))}`;hint.className='pagehint show top'+(dy>80?' ready':'')}else hide()},{passive:true});
+ document.addEventListener('touchend',e=>{if(!s)return;const o=s;s=null;hide();if(e.touches.length||e.changedTouches.length!==1||zoomed())return;
+  const dy=e.changedTouches[0].clientY-o.y,dx=e.changedTouches[0].clientX-o.x,dt=Date.now()-o.t;if(Math.abs(dy)<=80||Math.abs(dx)*1.5>Math.abs(dy)||dt>700)return;
+  let n=0;if(dy<0&&o.bot&&atBottom())n=1;else if(dy>0&&o.top&&atTop())n=-1;if(!n)return;pageCard(n)},{passive:true});
+ window.pageCard=n=>{const d=addDay($('#cardDay').value||todayISO(),n);$('#cardDay').value=d;setHash('card/'+d);cardView();se.scrollTop=0;
+  const sec=$('#card');sec.classList.remove('slide-u','slide-d');void sec.offsetWidth;sec.classList.add(n>0?'slide-u':'slide-d')};})();
