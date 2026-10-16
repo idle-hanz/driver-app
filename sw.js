@@ -1,4 +1,4 @@
-const V='agr-v24';const CORE=['./','index.html','app.js','lib.js','style.css','manifest.webmanifest','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png','favicon.png','stations.json','vendor/pdf.min.mjs','vendor/pdf.worker.min.mjs'];
+const V='agr-v25';const CORE=['./','index.html','app.js','lib.js','style.css','manifest.webmanifest','icon-192.png','icon-512.png','icon-maskable-512.png','apple-touch-icon.png','favicon.png','stations.json','vendor/pdf.min.mjs','vendor/pdf.worker.min.mjs'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(V).then(c=>c.addAll(CORE)));self.skipWaiting()});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(k=>Promise.all(k.filter(x=>x!==V).map(x=>caches.delete(x)))).then(()=>self.clients.claim()))});
 // Network first so updates show straight away; cache when offline. Live APIs and user data are never cached here.

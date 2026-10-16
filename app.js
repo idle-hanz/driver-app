@@ -143,7 +143,7 @@ async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const date=$('#paceDay
  const j=await driveTime(date,arrive),leave=j.leave;lastPace={leave,wake};alarmLabels();
  $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML.replace(/<p class="muted" id="paceBusy">.*?<\/p>/,''):'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr><tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table>
  <p>${j.tt?`Typical drive at ${m2t(leave)}: <b>${j.m} min</b> (${j.src})`:`Drive ${j.m} min (<span class="err">${j.src}</span>)`} + ${S.margin} min safety margin · lie-down ${S.lie} min</p>`}
-$('#geoHome').onclick=async()=>{const g=$('#geoMsg');g.textContent='Getting your location…';try{const p=await getPos();S.homeLL=`${p.coords.latitude.toFixed(5)},${p.coords.longitude.toFixed(5)}`;$('#sHomeLL').value=S.homeLL;LS.set('settings',S);g.textContent='Home saved on this phone.'}catch(e){g.textContent=e.message+' Enter lat,lon by hand.'}};
+$('#geoHome').onclick=async()=>{const g=$('#geoMsg');g.textContent='Getting your location…';try{const p=await getPos(geoStep(g));S.homeLL=`${p.coords.latitude.toFixed(5)},${p.coords.longitude.toFixed(5)}`;$('#sHomeLL').value=S.homeLL;LS.set('settings',S);g.textContent='Home saved on this phone.'}catch(e){g.textContent=e.message+' Enter lat,lon by hand.'}};
 $('#geoDepot').onclick=async()=>{const g=$('#geoMsg'),key=$('#sTT').value.trim()||S.tt,q=$('#sDepot').value.trim()||S.depot;if(!key){g.textContent='Add your TomTom key first, or type the depot lat,lon.';return}
  g.textContent='Looking up the depot…';try{const j=await (await fetch(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(q)}.json?countrySet=GB&limit=1&key=${encodeURIComponent(key)}`)).json();const p=j.results&&j.results[0]&&j.results[0].position;if(!p)throw new Error('Address not found.');
   S.depotLL=`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;$('#sDepotLL').value=S.depotLL;LS.set('settings',S);g.textContent=`Depot set to ${S.depotLL} (${esc(j.results[0].address&&j.results[0].address.freeformAddress||q)}). Check it on a map.`}catch(e){g.textContent='Lookup failed: '+e.message+' Type lat,lon by hand.'}};
@@ -176,12 +176,23 @@ const CODE2NAME=c=>{const n=CODE[c];return n&&STATIONS?((STATIONS.find(s=>s[0]==
 // ---- Arrived at book-off: one-shot foreground location -> nearest Piccadilly station -> TfL arrivals there ----
 let STATIONS=null;async function stations(){if(!STATIONS)STATIONS=await (await fetch('stations.json')).json();return STATIONS}
 function distM(a,b,c,d){const R=6371e3,r=x=>x*Math.PI/180,dl=r(c-a),dn=r(d-b),h=Math.sin(dl/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(h))}
-function getPos(){return new Promise((res,rej)=>{if(!navigator.geolocation)return rej(new Error('Location is not available on this device.'));navigator.geolocation.getCurrentPosition(res,e=>rej(new Error(e.code===1?'Location permission denied.':e.code===3?'Location timed out.':'Location unavailable.')),{enableHighAccuracy:true,timeout:15000,maximumAge:0})})}
+// Location: quick network fix first (accepts a fix up to 5 min old), then GPS if that fails. Errors carry the browser's code, message and permission state.
+const GEO_NAMES={1:'PERMISSION_DENIED',2:'POSITION_UNAVAILABLE',3:'TIMEOUT'};
+async function permState(){try{if(!navigator.permissions||!navigator.permissions.query)return'unknown (no Permissions API)';const r=await Promise.race([navigator.permissions.query({name:'geolocation'}),new Promise((_,j)=>setTimeout(()=>j(new Error('timeout')),1500))]);return r.state}catch(e){return'unknown ('+(e.message||e)+')'}}
+function geoOnce({lbl,...o}){return new Promise((res,rej)=>navigator.geolocation.getCurrentPosition(res,rej,o))}
+function getPos(onStep){if(!window.isSecureContext||!navigator.geolocation)return Promise.reject(Object.assign(new Error(`Location API not available (secure context: ${window.isSecureContext}).`),{diag:true}));
+ const tries=[{enableHighAccuracy:false,timeout:20000,maximumAge:300000,lbl:'network'},{enableHighAccuracy:true,timeout:45000,maximumAge:300000,lbl:'GPS'}];
+ const first=geoOnce(tries[0]); // called synchronously inside the tap handler
+ return(async()=>{const errs=[];for(let k=0;k<tries.length;k++){if(onStep)onStep(tries[k].lbl);try{const p=await(k?geoOnce(tries[k]):first);p.via=tries[k].lbl;return p}catch(e){errs.push(`${tries[k].lbl}: code ${e.code} ${GEO_NAMES[e.code]||''} "${e.message||''}"`);if(e.code===1)break}}
+  const ps=await permState(),last=errs[errs.length-1]||'';const human=/code 1 /.test(last)?'Location permission denied.':/code 3 /.test(last)?'Location timed out (no fix yet; try near a window or outside).':'Location unavailable (phone could not get a position; check Location is on).';
+  throw Object.assign(new Error(`${human} [${errs.join('; ')}; permission: ${ps}]`),{diag:true})})()}
+const geoStep=el=>s=>{el.textContent=s==='GPS'?'Still looking — trying GPS (can take up to 45 s indoors)…':'Getting your location…'};
+
 $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD.getHours()).padStart(2,'0')}:${String(nowD.getMinutes()).padStart(2,'0')}`,date=todayISO();
  $('#hDate').value=date;$('#hTime').value=hm;$('#hDuty').value=duties()[date]||'';const last=hoursDefaults();out.innerHTML='<p class="muted">Getting your location…</p>';
  const r=resolve(date);if(r&&r.times&&r.times.sign_off&&/^\d\d:\d\d/.test(r.times.sign_off)){let d=t2m(hm)-t2m(r.times.sign_off.slice(0,5));if(d<-720)d+=1440;if(d>720)d-=1440;$('#hOT').value=Math.max(0,d)}
  let st=null,dist=0;
- try{const p=await getPos(),list=(await stations()).map(s=>({id:s[0],name:s[1],d:distM(p.coords.latitude,p.coords.longitude,s[2],s[3])}));
+ try{const p=await getPos(s=>{const m=out.querySelector('.muted');if(m)geoStep(m)(s)}),list=(await stations()).map(s=>({id:s[0],name:s[1],d:distM(p.coords.latitude,p.coords.longitude,s[2],s[3])}));
   if(S.depotLL){const[la,lo]=S.depotLL.split(',').map(Number);if(!isNaN(la)&&!isNaN(lo))list.push({id:'940GZZLUASG',name:'Arnos Grove depot',d:distM(p.coords.latitude,p.coords.longitude,la,lo)})}
   list.sort((x,y)=>x.d-y.d);st=list[0];dist=Math.round(st.d)}
  catch(e){out.innerHTML=`<p class="err">${esc(e.message)}</p><p class="muted">Time filled in (${hm}). Enter the station and train number by hand below.</p>`;return}
@@ -250,3 +261,7 @@ if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;nav
   let n=0;if(dy<0&&o.bot&&atBottom())n=1;else if(dy>0&&o.top&&atTop())n=-1;if(!n)return;pageCard(n)},{passive:true});
  window.pageCard=n=>{const d=addDay($('#cardDay').value||todayISO(),n);$('#cardDay').value=d;setHash('card/'+d);cardView();se.scrollTop=0;
   const sec=$('#card');sec.classList.remove('slide-u','slide-d');void sec.offsetWidth;sec.classList.add(n>0?'slide-u':'slide-d')};})();
+
+$('#geoTest').onclick=async()=>{const o=$('#geoTestOut');o.textContent='Testing… permission: '+await permState();const t0=Date.now();
+ try{const p=await getPos(s=>o.textContent+=`\nTrying ${s}…`);const c=p.coords;o.textContent+=`\nOK via ${p.via} in ${((Date.now()-t0)/1000).toFixed(1)} s\nlat ${c.latitude.toFixed(5)}, lon ${c.longitude.toFixed(5)}\naccuracy ±${Math.round(c.accuracy)} m\nfix age ${Math.round((Date.now()-p.timestamp)/1000)} s`}
+ catch(e){o.textContent+=`\nFAILED after ${((Date.now()-t0)/1000).toFixed(1)} s\n${e.message}`}};
