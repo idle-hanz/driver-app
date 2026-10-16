@@ -61,12 +61,12 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  for(const tp of tpages){const cnt=[0,0,0,0,0,0,0];for(const d of duties)if(d.pages[0]>prev&&d.pages[0]<=tp)d.days.forEach(x=>cnt[x]++);const mx=Math.max(...cnt);secDays[tp]=cnt.map((c,i)=>c>=mx/2&&c>0?i:-1).filter(i=>i>=0);prev=tp}
  const DN=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
  for(const c of covers){c.days=secDays[c.tablePage]||[];c.dt='Cover duty ('+(c.days.length>1?DN[c.days[0]]+' - '+DN[c.days[c.days.length-1]]:DN[c.days[0]]||'?')+')';delete c.tablePage}
- for(const d of duties){const t=d.lines.join('\n');d.on=(t.match(/On:\s*(\d\d:\d\d)/)||[])[1]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';
+ for(const d of duties){const t=d.lines.join('\n');const om=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/)||[];d.on=om[1]||'';d.onAt=om[2]||'';d.finish=(t.match(/Finish:\s*(\S+)/)||[])[1]||'';
   const fm=t.match(/Finish:\s*\S+ \*/),nt=t.match(/\*:?\s*(This duty may finish[^\n]*)/i);if(fm&&nt)d.note=nt[1];if(/Spare Day on the Rota/i.test(t))d.spare=true;d.pickups=pickups(d.lines);delete d.lines}
  return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
-export const PARSER_VERSION=3;
+export const PARSER_VERSION=4;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
  const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
@@ -79,12 +79,12 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
    const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf);books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
    const types=[...new Set(nb.duties.filter(d=>!d.cover).map(d=>d.dt))],nc=nb.duties.filter(d=>d.cover).length;sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length-nc} duty cards + ${nc} cover duties (${[...new Set(nb.duties.filter(d=>d.cover).map(d=>d.dt))].join(', ')}), day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
-  const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],lines:l}:null}).filter(Boolean);
+  const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],onAt:on&&on[2]||'',lines:l}:null}).filter(Boolean);
   const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
   if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
   const id=(isRc?'RC-':'C-')+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
-  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
-  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
+  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,onAt:p.onAt,pages:[],pickups:pickups(p.lines)});c.pages.push(p.i);sum.rcPages++}}
+  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) \d\d:\d\d(?: ([A-Z]{2,4}))?/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,onAt:d[2]||'',hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
  await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
