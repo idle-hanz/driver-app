@@ -23,3 +23,4 @@ html.cardtab,html.cardtab body{overscroll-behavior-y:contain}
 section.slide-u{animation:su .2s ease-out}section.slide-d{animation:sd .2s ease-out}@media (prefers-reduced-motion:reduce){section.slide-u,section.slide-d{animation:none}}
 tr.meal td{background:#1d2a1d;color:#cfe8cf}.mealbox{border:2px solid #3a7d44;border-radius:10px;padding:6px 10px;margin:6px 0;background:#132013}
 .chgb{background:#b35c00;color:#fff}.chg{border-left:3px solid #b35c00;padding-left:8px;margin:8px 0}
+tr.before td{opacity:.35;text-decoration:line-through}.covbox{border:2px solid #6a4bbf;border-radius:10px;padding:4px 10px;margin:6px 0}.covline{margin:4px 0}.coved .pick button{display:block;width:100%;text-align:left;margin:3px 0}
