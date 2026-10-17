@@ -26,3 +26,6 @@ tr.meal td{background:#1d2a1d;color:#cfe8cf}.mealbox{border:2px solid #3a7d44;bo
 tr.before td{opacity:.35;text-decoration:line-through}.covbox{border:2px solid #6a4bbf;border-radius:10px;padding:4px 10px;margin:6px 0}.covline{margin:4px 0}.coved .pick button{display:block;width:100%;text-align:left;margin:3px 0}
 .englist{display:flex;flex-wrap:wrap;gap:4px;max-height:40vh;overflow:auto}
 table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.outb td{opacity:.45}table.brk tr.inb td{background:#22305a}table.brk tr.edge td{background:#3a4fa0;font-weight:bold}table.brk tr.pu td{border-top:1px solid #556}
+
+.covline,.coved{grid-column:1/-1}.coved .englist{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;max-height:50vh;overflow:auto}.coved .englist .chip{padding:8px 4px;font-size:13px;border-radius:8px;white-space:nowrap}.coved input.covduty{width:6em}table.brk tr.late td{opacity:.6;font-style:italic}
+.coved{margin-right:-22px}.coved .englist .chip{display:flex;flex-direction:column;align-items:center;line-height:1.2;white-space:normal}.coved .englist .chip b{font-size:15px}.coved .englist .chip small{font-size:12px;opacity:.85}
