@@ -1,7 +1,7 @@
 import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
-const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,allow:17,ready:5,tt:'',};
+const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,allow:17,boAllow:0,ready:5,tt:'',};
 const _st=LS.get('settings',{});if(_st.ready===undefined)delete _st.lie;let S=Object.assign({},DEF,_st),DATA={notices:[],cards:{},compact:{}};
 const iso=d=>d.toISOString().slice(0,10),addD=(s,n)=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return iso(d)};
 const sunday=s=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-d.getUTCDay());return iso(d)};
@@ -64,29 +64,34 @@ function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').val
 let brk=null; // bracket mode {date,duty,si,ei}
 function brkView(){const d=brk.date,c=resolveFor(d,brk.duty),b=resolveFor(d,duties()[d]),son=b&&b.times&&b.times.sign_on?t2m(b.times.sign_on):null,lim=allowMin();
  const rows=cardRows(c.card);const el=$('#cardInfo');
- const step=brk.si==null?'Tap the row where you <b>take over</b>.':brk.ei==null?'Now tap the row where you <b>finish</b>, or use “To end of duty”.':'Check the highlighted part, then Save.';
+ const step=brk.si==null?'Tap the row where you <b>take over</b>.':brk.ei==null?'Now tap the row where you <b>finish</b>, or use “To end of duty”.':'End set to the latest relief you can make before your spare finishes. Tap another row to change it, then Save.';
  el.innerHTML=`<div class="covbox"><p><b>Covering ${esc(brk.duty)}</b> (${c.type}) · spare ${esc(duties()[d])} book-on ${son!=null?m2t(son):'unknown'}${son!=null?` · rows before ${m2t(son+lim)} (book-on + ${lim} min) can't be chosen`:''}</p><p>${step}</p>
- <p><button class="b s" id="brkEnd" ${brk.si==null?'disabled':''}>To end of duty</button> <button class="b s" id="brkSave" ${brk.si==null?'disabled':''}>Save</button> <button class="b s" id="brkReset">Start again</button> <button class="b s" id="brkCancel">Cancel</button></p></div>`+bracketTable(c.card,brk.si==null?null:{si:brk.si,ei:brk.ei??(brk.si)},{pick:true,son,lim,endRel:(spareWin(d)||{}).endRel});
- el.querySelectorAll('tr.tap').forEach(tr=>tr.onclick=()=>{const i=+tr.dataset.i,late=tr.classList.contains('late');if(brk.si==null||brk.ei!=null||i<brk.si){if(late){toast('That is after your spare finishes, so it can only be an end point');return}brk.si=i;brk.ei=null}else if(i<brk.si){brk.si=i}else brk.ei=i;brkView()});
- $('#brkEnd').onclick=()=>{brk.ei=rows.length-1;brkView()};$('#brkReset').onclick=()=>{brk.si=brk.ei=null;brkView()};$('#brkCancel').onclick=()=>{brk=null;cardView()};
+ <p><button class="b s" id="brkEnd" ${brk.si==null?'disabled':''}>To end of duty</button> <button class="b s" id="brkSave" ${brk.si==null?'disabled':''}>Save</button> <button class="b s" id="brkReset">Start again</button> <button class="b s" id="brkCancel">Cancel</button></p></div>`+bracketTable(c.card,brk.si==null?null:{si:brk.si,ei:brk.ei??(brk.si)},{pick:true,son,lim,endRel:(spareWin(d)||{}).endLim});
+ el.querySelectorAll('tr.tap').forEach(tr=>tr.onclick=()=>{const i=+tr.dataset.i;if(brk.si==null||brk.ei!=null||i<brk.si){brk.si=i;brk.ei=null;const w=spareWin(d);if(w&&w.endLim!=null){const isEnd=j=>j===rows.length-1||rows[j+1].pi!==rows[j].pi;for(let j=rows.length-1;j>i;j--){const x=w.rel(rows[j].t);if(isEnd(j)&&x<1200&&x<=w.endLim){brk.ei=j;break}}}}else if(i<brk.si){brk.si=i}else brk.ei=i;brkView()});
+ $('#brkEnd').onclick=()=>{const w=spareWin(d);if(w&&w.endLim!=null&&w.rel(rows[rows.length-1].t)>w.endLim){toast('The duty ends after your spare finishes. Tap the last row you can work.');return}brk.ei=rows.length-1;brkView()};$('#brkReset').onclick=()=>{brk.si=brk.ei=null;brkView()};$('#brkCancel').onclick=()=>{brk=null;cardView()};
  $('#brkSave').onclick=()=>{const all=covers(),s=rows[brk.si],e=brk.ei==null||brk.ei===rows.length-1?null:rows[brk.ei];all[d]={duty:brk.duty,s:{pi:s.pi,k:s.k},e:e?{pi:e.pi,k:e.k}:null};LS.set('covering',all);{const t=LS.get('covTravel',{});delete t[d];LS.set('covTravel',t)}brk=null;toast('Covering saved');cardView()};
  $('#cardPages').innerHTML='';renderPages($('#cardPages'),c.card.pdf,c.card.pages,$('#cardPages').clientWidth||Math.min(innerWidth,800)-24,c.card.hl).catch(()=>{})}
 // Spare window: book-on + allowance .. spare finish (minutes after book-on, so after-midnight works)
 function spareWin(d){const b=resolveFor(d,duties()[d]);if(!b||!b.times||!/^\d\d:\d\d/.test(b.times.sign_on||''))return null;const son=t2m(b.times.sign_on),off=spareOff(d,b);
- return{son,lim:allowMin(),endRel:off?(t2m(off)-son+1440)%1440:null,off,rel:t=>(t2m(t)-son+1440)%1440}}
+ const er=off?(t2m(off)-son+1440)%1440:null;return{son,lim:allowMin(),endRel:er,endLim:er==null?null:er-(+S.boAllow||0),off,rel:t=>(t2m(t)-son+1440)%1440}}
+function coverFit(card,w){const rows=cardRows({pickups:card.allPickups||card.pickups});let si=-1;
+ for(let i=0;i<rows.length;i++){const x=w.rel(rows[i].t);if(x>=w.lim&&x<1200&&(w.endRel==null||x<=w.endRel)){si=i;break}}if(si<0)return null;
+ const isEnd=i=>i===rows.length-1||rows[i+1].pi!==rows[i].pi;let ei=-1;
+ for(let i=rows.length-1;i>si;i--){if(!isEnd(i))continue;const x=w.rel(rows[i].t);if(x<1200&&x>w.rel(rows[si].t)&&(w.endLim==null||x<=w.endLim)){ei=i;break}}
+ if(ei<0)return null;return{si,ei,s:rows[si],e:rows[ei]}}
 function firstTakeover(card,w){for(const r of cardRows({pickups:card.allPickups||card.pickups})){const x=w.rel(r.t);if(x>=w.lim&&x<1200&&(w.endRel==null||x<=w.endRel))return r}return null}
 function coverCandidates(d){const base=resolveFor(d,duties()[d]),w=spareWin(d);if(!base||!w)return{list:[],w};const keys=new Set();
  if(base.type==='Engineering'&&base.notice)Object.keys(DATA.cards[base.notice]||{}).forEach(k=>keys.add(k));
  else{const wd=new Date(d+'T12:00:00').getDay();for(const bk of DATA.normal||[])for(const x of bk.duties)if(!x.cover&&x.days.includes(wd)&&x.pickups&&x.pickups.length)keys.add(x.duty)}
- const list=[];for(const k of keys){if(k===duties()[d])continue;const c=resolveFor(d,k);if(!c||c.special||c.cover||!c.card||!c.card.pickups||!c.card.pickups.length)continue;const r=firstTakeover(c.card,w);if(r)list.push({k,r,x:w.rel(r.t)})}
+ const list=[];for(const k of keys){if(k===duties()[d])continue;const c=resolveFor(d,k);if(!c||c.special||c.cover||!c.card||!c.card.pickups||!c.card.pickups.length)continue;const f=w.endLim==null?null:coverFit(c.card,w);if(f)list.push({k,r:f.s,e:f.e,x:w.rel(f.s.t)})}
  return{list:list.sort((p,q)=>p.x-q.x||p.k.localeCompare(q.k)),w}}
 function covEditor(d){const el=$('#coved-'+d),cur=covers()[d]||{};
  const {list,w}=coverCandidates(d),win=w?`${m2t(w.son+w.lim)}–${w.off||'?'}`:'';
- el.innerHTML=(!w?'<p class="err">Spare book-on time not known, so duties can\'t be filtered. Type the duty number.</p>':list.length?`<p class="muted">Duties you could take over between ${win} (book-on + ${w.lim} min to spare finish${w.off?'':' — finish not known'}). Tap one, or type a number:</p><div class="englist">${list.map(x=>`<button class="chip" data-k="${x.k}"><b>${x.k}</b><small>from ${x.r.t} ${esc(x.r.at.split(' ')[0])}</small></button>`).join('')}</div>`:`<p class="err">No duty on this phone has a takeover point between ${win}. You can still type a duty number.</p>`)+`<label>Duty you're covering</label><input class="covduty" inputmode="numeric" maxlength="3" placeholder="e.g. 421" value="${esc(cur.duty||'')}"><div class="covpk"></div>`;
+ el.innerHTML=(!w?'<p class="err">Spare book-on time not known, so duties can\'t be filtered. Type the duty number.</p>':w.endLim==null?'<p class="err">Spare finish time not known, so duties can\'t be checked against it. Type it on the Running card or Pacing, or type a duty number.</p>':list.length?`<p class="muted">Duties you can take over after ${m2t(w.son+w.lim)} (book-on + ${w.lim} min) and be relieved by ${m2t(w.son+w.endLim)} (spare finish ${w.off}${+S.boAllow?` − ${S.boAllow} min book-off allowance`:''}). Tap one, or type a number:</p><div class="englist">${list.map(x=>`<button class="chip" data-k="${x.k}"><b>${x.k}</b><small>${x.r.t} ${esc(x.r.at.split(' ')[0])} → ${x.e.t} ${esc(x.e.at.split(' ')[0])}</small></button>`).join('')}</div>`:`<p class="err">No duty on this phone can be taken over and relieved between ${m2t(w.son+w.lim)} and ${m2t(w.son+w.endLim)}. You can still type a duty number.</p>`)+`<label>Duty you're covering</label><input class="covduty" inputmode="numeric" maxlength="3" placeholder="e.g. 421" value="${esc(cur.duty||'')}"><div class="covpk"></div>`;
  const inp=el.querySelector('.covduty'),pk=el.querySelector('.covpk');
  const show=()=>{const v=inp.value.trim();if(!/^\d{3}$/.test(v)){pk.innerHTML='<p class="muted">Enter the 3-digit duty number.</p>';return}const c=resolveFor(d,v);
   if(!c||c.special||!c.card||!c.card.pickups||!c.card.pickups.length){pk.innerHTML=`<p class="err">No parsed running card with pick-ups for duty ${esc(v)} on this date.</p>`;return}
-  const ok=!w||firstTakeover(c.card,w);pk.innerHTML=`<p class="muted">${c.type} card for ${esc(v)} found.</p>${ok?'':`<p class="err">Warning: duty ${esc(v)} has no timing point inside your spare hours (${m2t(w.son+w.lim)}–${w.off||'?'}).</p>`}<button class="b" id="brkGo">Open card to mark start and end…</button>`;
+  const ok=!w||w.endLim==null||coverFit(c.card,w);pk.innerHTML=`<p class="muted">${c.type} card for ${esc(v)} found.</p>${ok?'':`<p class="err">Warning: duty ${esc(v)} doesn't fit your spare hours: no start after ${m2t(w.son+w.lim)} with a relief by ${m2t(w.son+w.endLim)}.</p>`}<button class="b" id="brkGo">Open card to mark start and end…</button>`;
   pk.querySelector('#brkGo').onclick=e=>{e.stopPropagation();brk={date:d,duty:v,si:null,ei:null};cardFromWeek=d;document.querySelector('nav button[data-t=card]').click()}};
  el.querySelectorAll('.englist button').forEach(b=>b.onclick=e=>{e.stopPropagation();inp.value=b.dataset.k;show();pk.scrollIntoView({block:'nearest'})});inp.oninput=show;el.onclick=e=>e.stopPropagation();show();inp.focus()}
 function normCode(v){v=String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(!v)return'';if(/^(RD|R|REST.*|OFF)$/.test(v))return'RD';if(/^(AL|A|LEAVE|ANNUALLEAVE|HOL)$/.test(v))return'AL';if(/^(SP|SPARE|S)$/.test(v))return'SPARE';return v}
@@ -104,7 +109,7 @@ function bracketTable(card,sel,opts={}){const rows=cardRows({pickups:card.allPic
  const relS=opts.son!=null?t=>(t2m(t)-opts.son+1440)%1440:null;let h='<table class="brk"><tr><th>Train</th><th>Time</th><th>At</th><th>Direction</th></tr>',lastPi=-1;
  rows.forEach((r,i)=>{const early=relS&&(relS(r.t)<lim||relS(r.t)>1200),late=!early&&relS&&opts.endRel!=null&&relS(r.t)>opts.endRel,inB=sel&&i>=sel.si&&i<=(sel.ei??sel.si),edge=sel&&(i===sel.si||i===sel.ei);
   for(const m of ms)if(r.k===0&&r.pi>0&&lastPi!==r.pi&&t2m(m.from)<=t2m(r.t)&&t2m(m.from)>t2m(rows[i-1].t))h+=`<tr class="meal"><td colspan="4">🍽 Meal relief ${m.from}–${m.to} at ${esc(m.at)}</td></tr>`;
-  h+=`<tr data-i="${i}" class="${r.k===0?'pu ':''}${early?'early ':opts.pick?'tap ':''}${late?'late ':''}${inB?'inb ':sel?'outb ':''}${edge?'edge':''}"><td>${r.k===0||i===sel?.si?esc(r.train):''}</td><td><b>${r.t}</b></td><td>${esc(r.at)}</td><td>${r.k===0&&r.p.rev?'Reverser':esc(r.dir||'')}</td></tr>`;lastPi=r.pi});
+  h+=`<tr data-i="${i}" class="${r.k===0?'pu ':''}${early?'early ':late?'late ':opts.pick?'tap ':''}${inB?'inb ':sel?'outb ':''}${edge?'edge':''}"><td>${r.k===0||i===sel?.si?esc(r.train):''}</td><td><b>${r.t}</b></td><td>${esc(r.at)}</td><td>${r.k===0&&r.p.rev?'Reverser':esc(r.dir||'')}</td></tr>`;lastPi=r.pi});
  return h+'</table>'}
 function pickTable(c){if(c.bracket)return bracketTable(c,c.bracket);const ps=c.allPickups||c.pickups||[],fi=c.fromIdx||0,ms=c.allMeals||c.meals||[],b=ps.length?t2m(ps[0].time)-120:0,rel=t=>(t2m(t)-b+1440)%1440;
  const rows=[...ps.map((p,i)=>({k:rel(p.time),h:`<tr${i<fi?' class="before"':''}><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`})),
@@ -305,7 +310,7 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
   else h+='<p class="muted">No train at or due at this station in TfL arrivals in the last ~3 min. Enter the train number by hand.</p>'}
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
  out.innerHTML=spNote()+h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';spBind();out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
-const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sAllow:'allow',sTT:'tt'};
+const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sAllow:'allow',sBoAllow:'boAllow',sTT:'tt'};
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
@@ -338,7 +343,8 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]`)){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js');navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
+const APP_VERSION='agr-v33';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
+if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
  const skip=el=>el.closest('input,select,textarea,button,a,summary,.pick,.chips,nav,canvas.rc.zoomed')||[...function*(e){for(;e&&e!==document.body;e=e.parentElement)yield e}(el)].some(e=>e.scrollWidth>e.clientWidth+2&&/(auto|scroll)/.test(getComputedStyle(e).overflowX));
