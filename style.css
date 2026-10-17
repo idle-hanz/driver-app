@@ -25,3 +25,4 @@ tr.meal td{background:#1d2a1d;color:#cfe8cf}.mealbox{border:2px solid #3a7d44;bo
 .chgb{background:#b35c00;color:#fff}.chg{border-left:3px solid #b35c00;padding-left:8px;margin:8px 0}
 tr.before td{opacity:.35;text-decoration:line-through}.covbox{border:2px solid #6a4bbf;border-radius:10px;padding:4px 10px;margin:6px 0}.covline{margin:4px 0}.coved .pick button{display:block;width:100%;text-align:left;margin:3px 0}
 .englist{display:flex;flex-wrap:wrap;gap:4px;max-height:40vh;overflow:auto}
+table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.outb td{opacity:.45}table.brk tr.inb td{background:#22305a}table.brk tr.edge td{background:#3a4fa0;font-weight:bold}table.brk tr.pu td{border-top:1px solid #556}

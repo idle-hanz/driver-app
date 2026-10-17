@@ -1,7 +1,7 @@
 import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 const LS={get:(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch{return d}},set:(k,v)=>localStorage.setItem(k,JSON.stringify(v))};
-const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,ready:5,tt:'',};
+const DEF={depot:'Arnos Grove LU depot, Palmers Road, London N11',depotLL:'',homeLL:'',journey:35,margin:15,lie:30,allow:17,ready:5,tt:'',};
 const _st=LS.get('settings',{});if(_st.ready===undefined)delete _st.lie;let S=Object.assign({},DEF,_st),DATA={notices:[],cards:{},compact:{}};
 const iso=d=>d.toISOString().slice(0,10),addD=(s,n)=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+n);return iso(d)};
 const sunday=s=>{const d=new Date(s+'T12:00:00Z');d.setUTCDate(d.getUTCDate()-d.getUTCDay());return iso(d)};
@@ -15,11 +15,22 @@ const duties=()=>LS.get('duties',{}); // {date: duty}
 const SPECIAL={RD:'Rest day',AL:'Annual leave',SPARE:'Spare'};
 // ---- Spare covering: {date:{duty,from}} on this phone. resolve() merges the covered duty from the chosen pick-up. ----
 const covers=()=>LS.get('covering',{});
-function resolve(date){const b=resolveFor(date,duties()[date]);const cv=covers()[date];if(!b||!(b.cover||b.spare)||!cv||!cv.duty)return b;
- const c=resolveFor(date,cv.duty);if(!c||c.special||!c.card||!c.card.pickups||!c.card.pickups.length)return{...b,covering:{duty:cv.duty,from:0,missing:true}};
- const all=c.card.pickups,i=Math.min(cv.from||0,all.length-1),st=all[i];
- return{...c,duty:b.duty,cover:false,spare:false,onAt:'AGR',times:b.times&&b.times.sign_on?{sign_on:b.times.sign_on,length:'',sign_off:c.times&&c.times.sign_off||''}:null,
-  covering:{spareDuty:b.duty,spareOn:b.times&&b.times.sign_on||'',spareAt:b.onAt||'',duty:cv.duty,from:i,start:st,whole:i===0,ctype:c.type},card:{...c.card,pickups:all.slice(i),allPickups:all,fromIdx:i,meals:(c.card.meals||[]).filter(m=>!i||(t2m(m.from)-t2m(st.time)+1440)%1440<720),allMeals:c.card.meals||[]}}}
+// Flat list of timing points on a card: each knows its pick-up (train) index pi and point index k
+function cardRows(card){const out=[];(card.pickups||[]).forEach((p,pi)=>{const pts=p.pts&&p.pts.length?p.pts:[{t:p.time,at:p.at,dir:p.dir}];pts.forEach((q,k)=>out.push({pi,k,train:p.train,t:q.t,at:q.at,dir:k===0?(q.dir||p.dir):(q.dir||''),p}))});return out}
+// migrate old {duty,from} to brackets {duty,s:{pi,k},e:null}
+function covNorm(cv){if(!cv)return cv;if(!cv.s)return{duty:cv.duty,s:{pi:cv.from||0,k:0},e:null};return cv}
+const allowMin=()=>+S.allow||0;
+function resolve(date){const b=resolveFor(date,duties()[date]);const cv=covNorm(covers()[date]);if(!b||!(b.cover||b.spare)||!cv||!cv.duty)return b;
+ const c=resolveFor(date,cv.duty);if(!c||c.special||!c.card||!c.card.pickups||!c.card.pickups.length)return{...b,covering:{duty:cv.duty,missing:true}};
+ const rows=cardRows(c.card),si=Math.max(0,rows.findIndex(r=>r.pi===cv.s.pi&&r.k===cv.s.k)),ei=cv.e?Math.max(si,rows.findIndex(r=>r.pi===cv.e.pi&&r.k===cv.e.k)):rows.length-1,S0=rows[si],E0=rows[ei],toEnd=!cv.e||ei===rows.length-1;
+ const ps=c.card.pickups,sl=[];for(let pi=S0.pi;pi<=E0.pi;pi++){const p=ps[pi];let q={...p};
+  if(pi===S0.pi&&S0.k>0)q={...q,time:S0.t,at:S0.at,dir:S0.dir||p.dir,rev:'',midTrip:true,kind:'Platform'};
+  if(pi===E0.pi&&!toEnd){q.relief=E0.t;q.endAt=E0.at}sl.push(q)}
+ const st=sl[0],rel=t=>(t2m(t)-t2m(S0.t)+1440)%1440,endRel=rel(E0.t);
+ const start={train:S0.train,time:S0.t,at:S0.at,dir:S0.dir};
+ return{...c,duty:b.duty,cover:false,spare:false,onAt:'AGR',times:b.times&&b.times.sign_on?{sign_on:b.times.sign_on,length:'',sign_off:toEnd?(c.times&&c.times.sign_off||''):E0.t+' '+E0.at}:null,
+  covering:{spareDuty:b.duty,spareOn:b.times&&b.times.sign_on||'',spareAt:b.onAt||'',duty:cv.duty,start,end:{t:E0.t,at:E0.at,toEnd},whole:si===0&&toEnd,ctype:c.type,si,ei},
+  card:{...c.card,pickups:sl,allPickups:ps,bracket:{si,ei},meals:(c.card.meals||[]).filter(m=>rel(m.from)<endRel&&rel(m.from)<720),allMeals:c.card.meals||[]}}}
 function resolveFor(date,duty){if(!duty)return null;if(!/^\d{3}$/.test(duty))return{date,duty,type:SPECIAL[duty]||'Other',special:true,notice:'',times:null,card:null};
  for(const n of DATA.notices){if(n.dates.includes(date)){const d=n.duties[duty];
    const card=(DATA.cards[n.notice]||{})[duty]||null,cp=(DATA.compact[n.notice]||{})[duty]||null;
@@ -37,7 +48,7 @@ function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').val
  for(let i=0;i<7;i++){const d=addD(s,i),r=resolve(d),v=du[d]||'',sp=SPECIAL[v];
   h+=`<div class="day${d===td?' today':''}${sp?' rest':''}" data-day="${d}" role="button" title="Open running card"><span class="chev">›</span><div><b>${DAYS[i]}</b> <span class="muted">${d.slice(8)}/${d.slice(5,7)}</span>${d===td?' <span class="tag eng">Today</span>':''}${(LS.get('changes',{})[d]||{}).seen===false?' <span class="tag chgb">Changed</span>':''}</div><input data-d="${d}" inputmode="numeric" placeholder="Duty" value="${esc(sp?v:v)}">
   <div>${r?(r.special?`<b class="${v==='RD'?'restday':''}">${r.type}</b>`:`<span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span>${r.times?` On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Off ${r.times.sign_off}`:''}${r.warn?` <span class="err">${r.warn}</span>`:''}`):''}</div>
-  ${r&&(r.cover||r.spare||r.covering)?`<div class="covline">${r.covering?`<span class="tag">Covering ${esc(r.covering.duty)}${r.covering.missing?' (no card)':r.covering.whole?' · whole duty':` from ${esc(r.covering.start.train)} ${r.covering.start.time}`}</span> <button class="chip covedit" data-d="${d}">Change</button> <button class="chip covclear" data-d="${d}">Clear</button>`:`<button class="chip covedit" data-d="${d}">Covering…</button>`}</div><div class="coved" id="coved-${d}"></div>`:''}<div class="chips">${['RD'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
+  ${r&&(r.cover||r.spare||r.covering)?`<div class="covline">${r.covering?`<span class="tag">Covering ${esc(r.covering.duty)}${r.covering.missing?' (no card)':r.covering.whole?' · whole duty':` · ${esc(r.covering.start.train)} ${r.covering.start.time} ${esc(r.covering.start.at)} → ${r.covering.end.toEnd?'end':r.covering.end.t+' '+esc(r.covering.end.at)}`}</span> <button class="chip covedit" data-d="${d}">Change</button> <button class="chip covclear" data-d="${d}">Clear</button>`:`<button class="chip covedit" data-d="${d}">Covering…</button>`}</div><div class="coved" id="coved-${d}"></div>`:''}<div class="chips">${['RD'].map(c=>`<button class="chip${v===c?' on':''}" data-d="${d}" data-c="${c}">${c==='RD'?'Rest':c==='SPARE'?'Spare':'Leave (AL)'}</button>`).join('')}</div></div>`}
  $('#days').innerHTML=h;
  document.querySelectorAll('#days .day').forEach(row=>row.onclick=e=>{if(e.target.closest('input,button'))return;const d=row.dataset.day;cardFromWeek=d;document.querySelector('nav button[data-t=card]').click()});
  document.querySelectorAll('#days .covclear').forEach(b=>b.onclick=()=>{const c=covers();delete c[b.dataset.d];LS.set('covering',c);weekView()});
@@ -45,6 +56,16 @@ function weekView(){if(!$('#wk').options.length)wkOptions();const e=$('#wk').val
  document.querySelectorAll('#days .chip:not(.covedit):not(.covclear)').forEach(b=>b.onclick=()=>{const du=duties();if(du[b.dataset.d]===b.dataset.c)delete du[b.dataset.d];else du[b.dataset.d]=b.dataset.c;LS.set('duties',du);weekView()});
  document.querySelectorAll('#days input').forEach(i=>i.onchange=()=>{const du=duties(),v=normCode(i.value);if(v)du[i.dataset.d]=v;else delete du[i.dataset.d];LS.set('duties',du);weekView()});
  fillDays()}
+let brk=null; // bracket mode {date,duty,si,ei}
+function brkView(){const d=brk.date,c=resolveFor(d,brk.duty),b=resolveFor(d,duties()[d]),son=b&&b.times&&b.times.sign_on?t2m(b.times.sign_on):null,lim=allowMin();
+ const rows=cardRows(c.card);const el=$('#cardInfo');
+ const step=brk.si==null?'Tap the row where you <b>take over</b>.':brk.ei==null?'Now tap the row where you <b>finish</b>, or use “To end of duty”.':'Check the highlighted part, then Save.';
+ el.innerHTML=`<div class="covbox"><p><b>Covering ${esc(brk.duty)}</b> (${c.type}) · spare ${esc(duties()[d])} book-on ${son!=null?m2t(son):'unknown'}${son!=null?` · rows before ${m2t(son+lim)} (book-on + ${lim} min) can't be chosen`:''}</p><p>${step}</p>
+ <p><button class="b s" id="brkEnd" ${brk.si==null?'disabled':''}>To end of duty</button> <button class="b s" id="brkSave" ${brk.si==null?'disabled':''}>Save</button> <button class="b s" id="brkReset">Start again</button> <button class="b s" id="brkCancel">Cancel</button></p></div>`+bracketTable(c.card,brk.si==null?null:{si:brk.si,ei:brk.ei??(brk.si)},{pick:true,son,lim});
+ el.querySelectorAll('tr.tap').forEach(tr=>tr.onclick=()=>{const i=+tr.dataset.i;if(brk.si==null||brk.ei!=null){brk.si=i;brk.ei=null}else if(i<brk.si){brk.si=i}else brk.ei=i;brkView()});
+ $('#brkEnd').onclick=()=>{brk.ei=rows.length-1;brkView()};$('#brkReset').onclick=()=>{brk.si=brk.ei=null;brkView()};$('#brkCancel').onclick=()=>{brk=null;cardView()};
+ $('#brkSave').onclick=()=>{const all=covers(),s=rows[brk.si],e=brk.ei==null||brk.ei===rows.length-1?null:rows[brk.ei];all[d]={duty:brk.duty,s:{pi:s.pi,k:s.k},e:e?{pi:e.pi,k:e.k}:null};LS.set('covering',all);brk=null;toast('Covering saved');cardView()};
+ $('#cardPages').innerHTML='';renderPages($('#cardPages'),c.card.pdf,c.card.pages,$('#cardPages').clientWidth||Math.min(innerWidth,800)-24,c.card.hl).catch(()=>{})}
 function covEditor(d){const el=$('#coved-'+d),cur=covers()[d]||{};
  const base=resolveFor(d,duties()[d]),eng=base&&base.type==='Engineering'&&base.notice?DATA.notices.find(n=>n.notice===base.notice):null;
  const engList=eng?Object.entries(DATA.cards[eng.notice]||{}).filter(([k,c])=>c.pickups&&c.pickups.length&&k!==duties()[d]).map(([k])=>({k,t:eng.duties[k]||{}})).sort((x,y)=>(x.t.sign_on||'99').localeCompare(y.t.sign_on||'99')):[];
@@ -52,8 +73,8 @@ function covEditor(d){const el=$('#coved-'+d),cur=covers()[d]||{};
  const inp=el.querySelector('.covduty'),pk=el.querySelector('.covpk');
  const show=()=>{const v=inp.value.trim();if(!/^\d{3}$/.test(v)){pk.innerHTML='<p class="muted">Enter the 3-digit duty number.</p>';return}const c=resolveFor(d,v);
   if(!c||c.special||!c.card||!c.card.pickups||!c.card.pickups.length){pk.innerHTML=`<p class="err">No parsed running card with pick-ups for duty ${esc(v)} on this date.</p>`;return}
-  pk.innerHTML=`<p class="muted">${c.type} card. Tap the pick-up you start from (the first one = whole duty):</p><div class="pick">`+c.card.pickups.map((p,i)=>`<button data-i="${i}" class="${cur.duty===v&&(cur.from||0)===i?'on':''}">${esc(p.train)} · ${p.time} · ${esc(p.at)}${p.rev?' (Reverser)':''}${i===0?' — whole duty':''}</button>`).join('')+'</div>';
-  pk.querySelectorAll('button').forEach(b=>b.onclick=e=>{e.stopPropagation();const all=covers();all[d]={duty:v,from:+b.dataset.i};LS.set('covering',all);weekView()})};
+  pk.innerHTML=`<p class="muted">${c.type} card for ${esc(v)} found.</p><button class="b" id="brkGo">Open card to mark start and end…</button>`;
+  pk.querySelector('#brkGo').onclick=e=>{e.stopPropagation();brk={date:d,duty:v,si:null,ei:null};cardFromWeek=d;document.querySelector('nav button[data-t=card]').click()}};
  el.querySelectorAll('.englist button').forEach(b=>b.onclick=e=>{e.stopPropagation();inp.value=b.dataset.k;show();pk.scrollIntoView({block:'nearest'})});inp.oninput=show;el.onclick=e=>e.stopPropagation();show();inp.focus()}
 function normCode(v){v=String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,'');if(!v)return'';if(/^(RD|R|REST.*|OFF)$/.test(v))return'RD';if(/^(AL|A|LEAVE|ANNUALLEAVE|HOL)$/.test(v))return'AL';if(/^(SP|SPARE|S)$/.test(v))return'SPARE';return v}
 (function migrate(){const du=duties();let ch=false;for(const k in du){const n=normCode(du[k]);if(n!==du[k]){ch=true;if(n)du[k]=n;else delete du[k]}}if(ch)LS.set('duties',du)})();
@@ -66,7 +87,13 @@ $('#wk').onchange=weekView;
 let cardFromWeek=null;
 function todayISO(){const d=NOW();return`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`}
 // Pick-up table with meal reliefs slotted in time order (times relative to the first pick-up so overnight duties sort right)
-function pickTable(c){const ps=c.allPickups||c.pickups||[],fi=c.fromIdx||0,ms=c.allMeals||c.meals||[],b=ps.length?t2m(ps[0].time)-120:0,rel=t=>(t2m(t)-b+1440)%1440;
+function bracketTable(card,sel,opts={}){const rows=cardRows({pickups:card.allPickups||card.pickups}),ms=card.allMeals||card.meals||[],lim=opts.lim;
+ const relS=opts.son!=null?t=>(t2m(t)-opts.son+1440)%1440:null;let h='<table class="brk"><tr><th>Train</th><th>Time</th><th>At</th><th>Direction</th></tr>',lastPi=-1;
+ rows.forEach((r,i)=>{const early=relS&&(relS(r.t)<lim||relS(r.t)>1200),inB=sel&&i>=sel.si&&i<=(sel.ei??sel.si),edge=sel&&(i===sel.si||i===sel.ei);
+  for(const m of ms)if(r.k===0&&r.pi>0&&lastPi!==r.pi&&t2m(m.from)<=t2m(r.t)&&t2m(m.from)>t2m(rows[i-1].t))h+=`<tr class="meal"><td colspan="4">🍽 Meal relief ${m.from}–${m.to} at ${esc(m.at)}</td></tr>`;
+  h+=`<tr data-i="${i}" class="${r.k===0?'pu ':''}${early?'early ':opts.pick?'tap ':''}${inB?'inb ':sel?'outb ':''}${edge?'edge':''}"><td>${r.k===0||i===sel?.si?esc(r.train):''}</td><td><b>${r.t}</b></td><td>${esc(r.at)}</td><td>${r.k===0&&r.p.rev?'Reverser':esc(r.dir||'')}</td></tr>`;lastPi=r.pi});
+ return h+'</table>'}
+function pickTable(c){if(c.bracket)return bracketTable(c,c.bracket);const ps=c.allPickups||c.pickups||[],fi=c.fromIdx||0,ms=c.allMeals||c.meals||[],b=ps.length?t2m(ps[0].time)-120:0,rel=t=>(t2m(t)-b+1440)%1440;
  const rows=[...ps.map((p,i)=>({k:rel(p.time),h:`<tr${i<fi?' class="before"':''}><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`})),
   ...ms.map(m=>({k:rel(m.from)-0.5,h:`<tr class="meal${fi&&rel(m.from)<rel(ps[fi].time)?' before':''}"><td colspan="5">🍽 Meal relief <b>${m.from}–${m.to}</b> at ${esc(m.at)}</td></tr>`}))].sort((x,y)=>x.k-y.k);
  return'<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+rows.map(r=>r.h).join('')+'</table>'}
@@ -76,9 +103,9 @@ function mealBanner(card,ps,at,now,cur,working,end){const ms=card.meals||[];for(
  if(working&&ps[cur]){const e=+end(ps[cur],cur),s=+at(ps[cur].time);const nx=ps[cur+1]?+at(ps[cur+1].time):e+6*3600e3,m=ms.find(m=>+at(m.from)>=s&&+at(m.from)<nx);if(m)return`<p class="tag">Next: meal relief ${m.from} at ${esc(m.at)}</p>`}
  return''}
 function covBanner(r){const c=r.covering;if(c.missing)return`<p class="err">Covering duty ${esc(c.duty)}: no parsed running card for it on this date. Import its card, or change Covering on the Week page.</p>`;
- return`<div class="covbox"><p><span class="tag">Spare ${esc(c.spareDuty)}</span> covering <span class="tag ${c.ctype==='Engineering'?'eng':''}">${c.ctype}</span> duty <b>${esc(c.duty)}</b></p><p>Book on <b>${c.spareOn||'— (not in the notice; type it on Pacing)'}</b> at ${esc(c.spareAt&&c.spareAt!=='AGR'?c.spareAt:'Arnos Grove')} · ${c.whole?'whole duty':`from <b>${esc(c.start.train)}</b> ${c.start.time} at ${esc(c.start.at)}`} · Off <b>${r.times&&r.times.sign_off||c.offCov||'—'}</b></p></div>`}
+ return`<div class="covbox"><p><span class="tag">Spare ${esc(c.spareDuty)}</span> covering <span class="tag ${c.ctype==='Engineering'?'eng':''}">${c.ctype}</span> duty <b>${esc(c.duty)}</b></p><p>Book on <b>${c.spareOn||'— (not in the notice; type it on Pacing)'}</b> at ${esc(c.spareAt&&c.spareAt!=='AGR'?c.spareAt:'Arnos Grove')} · ${c.whole?'whole duty':`train <b>${esc(c.start.train)}</b> from ${c.start.time} ${esc(c.start.at)} to ${c.end.toEnd?'end of duty':`${c.end.t} ${esc(c.end.at)}`}`} · Off <b>${r.times&&r.times.sign_off||c.offCov||'—'}</b></p></div>`}
 function cardHead(){const d=$('#cardDay').value,t=todayISO(),dd=new Date(d+'T12:00:00');$('#cardHead').innerHTML=`<p><b>${d===t?'Today':''} ${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}</b>${d!==t?' · <a href="#" id="backToday">Back to today</a>':''}</p>`;const bt=$('#backToday');if(bt)bt.onclick=e=>{e.preventDefault();$('#cardDay').value=t;setHash('card/'+t);cardView()}}
-function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();{const ch=LS.get('changes',{}),cd=$('#cardDay').value;if(ch[cd]&&!ch[cd].seen&&document.querySelector('nav button.on')?.dataset.t==='card'){ch[cd].seen=true;LS.set('changes',ch)}}cardHead();const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
+function cardView(){if(!$('#cardDay').value)$('#cardDay').value=todayISO();{const ch=LS.get('changes',{}),cd=$('#cardDay').value;if(ch[cd]&&!ch[cd].seen&&document.querySelector('nav button.on')?.dataset.t==='card'){ch[cd].seen=true;LS.set('changes',ch)}}cardHead();if(brk&&brk.date===$('#cardDay').value){brkView();return}if(brk&&brk.date!==$('#cardDay').value)brk=null;const r=resolve($('#cardDay').value);if(!r||r.special){$('#cardInfo').innerHTML=r?`<p class="restday">${r.type}</p><p class="muted">No running card.</p>`:'<p>No duty entered for this day.</p>';$('#cardPages').innerHTML='';return}
  let h=r.covering?covBanner(r):'';h+=r.covering&&!r.covering.missing?'':`<p><span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> Duty <b>${esc(r.duty)}</b>${r.warn?' <span class="err">'+r.warn+'</span>':''}</p>`;
  if(r.times&&!r.covering)h+=`<p>On <b>${r.times.sign_on}</b> ${esc(r.onAt||'')} · Length ${r.times.length} · Off <b>${r.times.sign_off}</b>${r.times.clock_change==='1'?' <span class="tag eng">clock change</span>':''}</p>`;
  if(r.cover)h+=`<p><span class="tag eng">Cover duty</span> No running card${r.desc?' — '+esc(r.desc):''}. The cover table is shown below with this duty highlighted.</p>`;else if(r.spare)h+=r.tmi?`<p class="big">Spare turn, to duty manager's instructions. Tap Covering when you know your duty.</p><p><button class="b s" id="cardCov">Covering…</button></p>`:'<p><span class="tag">Spare</span> No booked train.</p>';if(r.note)h+=`<p class="muted">* ${esc(r.note)}</p>`;
@@ -175,7 +202,7 @@ async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const date=$('#paceDay
  if(first&&!r.cover&&!r.spare){wake=t2m(first.time)-10;wakeTxt=`Wake up (10 min before ${esc(first.train)} pick-up ${first.time})`}else{wake=son-10;wakeTxt='Wake up (10 min before sign-on)'}
  $('#paceOut').innerHTML+='<p class="muted" id="paceBusy">Working out drive time…</p>';
  const j=await driveTime(date,arrive),leave=j.leave;lastPace={leave,wake};alarmLabels();
- $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML.replace(/<p class="muted" id="paceBusy">.*?<\/p>/,''):'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr>${cov?`<tr><td>Arrive Arnos Grove and book on (spare ${esc(cov.spareDuty)})</td><td><b>${on}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Leave Arnos by</td><td class="big" id="leaveArnos">…</td></tr><tr><td>Lie down at ${esc(cov.start.at)} (40 min)</td><td><b>${m2t(t2m(cov.start.time)-40)}</b></td></tr><tr><td>Pick up ${esc(cov.start.train)} at ${esc(cov.start.at)}</td><td><b>${cov.start.time}</b></td></tr></table><div id="travelOut"></div>`
+ $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML.replace(/<p class="muted" id="paceBusy">.*?<\/p>/,''):'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr>${cov?`<tr><td>Arrive Arnos Grove and book on (spare ${esc(cov.spareDuty)})</td><td><b>${on}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Leave Arnos by</td><td class="big" id="leaveArnos">…</td></tr><tr><td>Lie down at ${esc(cov.start.at)} (40 min)</td><td><b>${m2t(t2m(cov.start.time)-40)}</b></td></tr><tr><td>Take over ${esc(cov.start.train)} at ${esc(cov.start.at)}</td><td><b>${cov.start.time}</b></td></tr>${cov.end&&!cov.end.toEnd?`<tr><td>Finish (end of covering) at ${esc(cov.end.at)}</td><td><b>${cov.end.t}</b></td></tr>`:''}</table><div id="travelOut"></div>`
  :`<tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table>`}
  <p>${j.tt?`Typical drive at ${m2t(leave)}: <b>${j.m} min</b> (${j.src})`:`Drive ${j.m} min (<span class="err">${j.src}</span>)`} + ${S.margin} min safety margin${cov?' · no lie-down at Arnos (covering)':` · lie-down ${S.lie} min`}</p>`;if(cov)leaveArnos(date,cov,son)}
 // Piccadilly depot/relief point codes used on the cards -> TfL station ids. Unknown codes need minutes typed by hand.
@@ -184,7 +211,7 @@ async function tflTravel(date,toId,arriveBy){const u=`https://api.tfl.gov.uk/Jou
  const j=await (await fetch(u)).json();const js=(j.journeys||[]).filter(x=>x.duration>0);if(!js.length)throw new Error('no journeys returned');
  const best=js.sort((x,y)=>new Date(y.startDateTime)-new Date(x.startDateTime))[0];return{m:best.duration,dep:best.startDateTime.slice(11,16)}}
 async function leaveArnos(date,cov,son){const o=$('#travelOut'),cell=$('#leaveArnos'),code=cov.start.at.split(' ')[0],pu=t2m(cov.start.time),lie=pu-40,man=LS.get('covTravel',{})[date];
- const put=(m,src)=>{const lv=lie-m;cell.textContent=m2t(lv);o.innerHTML=`<p>Travel Arnos Grove → ${esc(cov.start.at)}: <b>${m} min</b> (${src}) · 40 min lie-down before ${esc(cov.start.train)} ${cov.start.time}</p>`+(((lv-son+1440)%1440)>720?`<p class="err">Leave Arnos by ${m2t(lv)} is before your book-on at ${m2t(son)}. You can't make this pick-up from book-on with a full 40 min lie-down.</p>`:'')+manBox()};
+ const put=(m,src)=>{const lv=lie-m;cell.textContent=m2t(lv);o.innerHTML=`<p>Travel Arnos Grove → ${esc(cov.start.at)}: <b>${m} min</b> (${src}) · 40 min lie-down before ${esc(cov.start.train)} ${cov.start.time}</p>`+(((lv-son-allowMin()+1440)%1440)>720?`<p class="err">Leave Arnos by ${m2t(lv)} is before book-on ${m2t(son)} + ${allowMin()} min allowance (${m2t(son+allowMin())}). You can't make this start from book-on with a full 40 min lie-down.</p>`:'')+manBox()};
  const manBox=()=>`<p class="muted">Travel minutes by hand: <input id="covMan" type="number" min="0" style="width:5em" value="${man??''}"> ${man!=null?'<a href="#" id="covManClr">use TfL</a>':''}</p>`;
  const bind=()=>{const i=$('#covMan');if(i)i.onchange=()=>{const t=LS.get('covTravel',{});if(i.value==='')delete t[date];else t[date]=+i.value;LS.set('covTravel',t);calc($('#paceOn')?$('#paceOn').value:cov.spareOn)};const c=$('#covManClr');if(c)c.onclick=e=>{e.preventDefault();const t=LS.get('covTravel',{});delete t[date];LS.set('covTravel',t);calc(cov.spareOn)}};
  if(code==='AGR'){put(0,'pick-up is at Arnos Grove');bind();return}
@@ -260,7 +287,7 @@ $('#boBtn').onclick=async()=>{const out=$('#boOut'),nowD=NOW(),hm=`${String(nowD
   else h+='<p class="muted">No train at or due at this station in TfL arrivals in the last ~3 min. Enter the train number by hand.</p>'}
  catch(e){h+='<p class="err">No live TfL data (offline?). Enter the train number by hand.</p>'}
  out.innerHTML=h+'<p class="muted">Check the form below, then tap <b>Add to log</b>.</p>';out.querySelectorAll('.pick button').forEach(b=>b.onclick=()=>{$('#hSame').checked=false;syncSame();$('#hTrain').value=b.dataset.v})};
-const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sTT:'tt'};
+const SF={sDepot:'depot',sDepotLL:'depotLL',sHomeLL:'homeLL',sJourney:'journey',sMargin:'margin',sLie:'lie',sAllow:'allow',sTT:'tt'};
 function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
