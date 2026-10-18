@@ -36,3 +36,4 @@ table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.ou
 #dk table{width:100%;border-collapse:collapse}#dk th{text-align:left;font-size:17px;padding:8px 6px;border-bottom:1px solid #999;width:44%}#dk td{border-bottom:1px solid #999;padding:4px}
 #dk input{width:100%;font-size:22px;font-weight:bold;border:0;background:#fff;color:#000;padding:6px}#dk input:placeholder-shown{background:#fff3b0}.dkhint{color:#333}#dk .b{font-size:18px}
 .rem{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#3b2a10;border:1px solid #c98a2b;color:#ffe2b0;border-radius:10px;padding:6px 10px;margin:6px 0}.rem .b{flex:none}
+.getoff{font-size:1.1em}.getoffTag{background:#c62828;color:#fff}tr.tail td{background:#123a1f;color:#cfe9d4;font-weight:600}.tback{margin:4px 0}
