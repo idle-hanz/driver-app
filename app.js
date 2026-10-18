@@ -118,10 +118,10 @@ function pickTable(c,cov){if(c.bracket)return bracketTable(c,c.bracket,{tail:cov
  const rows=[...ps.map((p,i)=>({k:rel(p.time),h:`<tr${i<fi?' class="before"':''}><td>${p.train}</td><td><b>${p.time}</b></td><td>${esc(p.at)}</td><td>${p.rev?'Reverser':p.dir}</td><td>${p.kind}</td></tr>`})),
   ...ms.map(m=>({k:rel(m.from)-0.5,h:`<tr class="meal${fi&&rel(m.from)<rel(ps[fi].time)?' before':''}"><td colspan="5">🍽 Meal relief <b>${m.from}–${m.to}</b> at ${esc(m.at)}</td></tr>`}))].sort((x,y)=>x.k-y.k);
  return'<table><tr><th>Train</th><th>Pick up</th><th>At</th><th>Direction</th><th>Where</th></tr>'+rows.map(r=>r.h).join('')+'</table>'}
-function mealBanner(card,ps,at,now,cur,working,end){const ms=card.meals||[];for(const m of ms){const f=at(m.from),t=at(m.to);let nx=ps.findIndex(q=>+at(q.time)>=+t);const n=ps[nx];
+function mealBanner(card,ps,at,now,cur,working,end,RL){const ms=card.meals||[];for(const m of ms){const f=at(m.from),t=at(m.to);let nx=ps.findIndex(q=>+at(q.time)>=+t);const n=ps[nx];
   const backBy=n?at(n.time):t;if(now>=+f&&now<+backBy){const mins=Math.max(0,Math.ceil((t-now)/60000));
    return`<div class="mealbox"><p class="big">🍽 Meal relief ${m.from}–${m.to} at ${esc(m.at)}</p><p>${now<+t?`Back on in <b>${mins} min</b>`:'Meal over'}${n?`, next train <b>${esc(n.train)}</b> ${n.time} at ${esc(n.at)} (${n.rev?'Reverser':n.dir})`:''}</p></div>`}}
- if(working&&ps[cur]){const e=+end(ps[cur],cur),s=+at(ps[cur].time);const nx=ps[cur+1]?+at(ps[cur+1].time):e+6*3600e3,m=ms.find(m=>+at(m.from)>=s&&+at(m.from)<nx);if(m)return`<p class="tag">Next: meal relief ${m.from} at ${esc(m.at)}</p>`}
+ if(working&&ps[cur]){const e=+end(ps[cur],cur),s=+at(ps[cur].time);const nx=ps[cur+1]?+at(ps[cur+1].time):e+6*3600e3,m=ms.find(m=>+at(m.from)>=s&&+at(m.from)<nx);if(m&&!(RL&&!RL.getOff&&t2m(RL.t)<=t2m(m.from)))return`<p class="tag">Next: meal relief ${m.from} at ${esc(m.at)}</p>`;if(RL)return`<p class="tag">${RL.getOff?'Get off next':'Relieved next'} at ${relTxt(RL)}</p>`}
  return''}
 const dTxt=s=>{const d=s.rev?'Reverser':(s.dir&&s.dir!=='see card'?s.dir:'');return(d?' · '+d:'')+(s.kind?' · '+s.kind:'')};
 function bindSpOff(el,after){el.querySelectorAll('.spOff').forEach(i=>i.onchange=()=>{const v=i.value.trim(),t=LS.get('spareOff',{});if(/^\d\d:\d\d$/.test(v))t[i.dataset.d]=v;else if(!v)delete t[i.dataset.d];else{toast('Type the time as HH:MM');return}LS.set('spareOff',t);after()})}
@@ -165,13 +165,13 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
  const ps=r.card.pickups,on=t2m(r.times&&r.times.sign_on||ps[0].time);
  const at=t=>{const d=new Date(`${date}T${t}:00`);if(t2m(t)<on-60)d.setDate(d.getDate()+1);return d};
  const end=(p,i)=>p.relief?at(p.relief):ps[i+1]?at(ps[i+1].time):new Date(+at(p.time)+4*3600e3);
- if(r.covering&&!r.covering.missing&&now>=+at(r.covering.end.t)){const c=r.covering;out.innerHTML=head+`<p class="big">You're spare until ${c.spareOff||'— (finish not known)'}.</p><p>Driving done at <b>${c.end.t}</b> ${esc(c.end.at.replace(/ (E|W)$/,''))}.</p>${backSlot(date,c)}`;fillBack(out);return}
+ if(r.covering&&!r.covering.missing&&now>=+at(r.covering.end.t)){const c=r.covering;out.innerHTML=head+`<p class="big">You're spare until ${c.spareOff||'— (finish not known)'}.</p><p>Driving done at <b>${c.end.t}</b> ${placeTxt(c.end.at,c.end.rev?'Reverser':c.end.dir)}.</p>${backSlot(date,c)}`;fillBack(out);return}
  let cur=ps.findIndex((p,i)=>now<end(p,i));const auto=cur;if(trSel!==null&&ps[trSel])cur=trSel;
  const sel=`<div class="pick">${ps.map((p,i)=>`<button data-i="${i}" class="${i===cur?'on':''}">${p.train} · ${p.time}${i===auto?' (now)':''}</button>`).join('')}${trSel!==null?'<button data-i="auto">Follow current</button>':''}</div>`;
  if(cur<0){out.innerHTML=head+'<p class="big">All pick-ups done</p><p class="muted">Last relief has passed.</p>'+sel;bindSel();return}
- const p=ps[cur],booked=at(p.time),working=now>=+booked,rel=p.relief?` · relieved ${p.relief}`:'';
+ const p=ps[cur],booked=at(p.time),working=now>=+booked,RL=reliefOf(r,ps,cur),rel='';
  const dirTxt=p.rev?'Reverser':`${p.dir}`;
- let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;h=h.replace('<div class="trainhead">',mealBanner(r.card,ps,at,now,cur,working,end)+'<div class="trainhead">');
+ let h=head+`<div class="trainhead"><div><div class="muted">Train</div><div class="trainno" id="curTrain">${esc(p.train)}</div></div><div><div>Pick up <b class="big">${p.time}</b></div><div>at <b>${esc(p.at)}</b> · ${dirTxt} · ${p.kind}${rel}</div>${RL?`<div class="relief">${RL.getOff?'Get off':'Relieved'} at <b>${relTxt(RL)}</b></div>`:''}${working?'<div class="tag eng">Working this train now</div>':''}</div></div>`;h=h.replace('<div class="trainhead">',mealBanner(r.card,ps,at,now,cur,working,end,RL)+'<div class="trainhead">');
  let all=null;try{all=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Arrivals')).json()}catch(e){h+='<p class="err">No live data (offline?).</p>'}
  if(all){const preds=all.filter(a=>normV(a.vehicleId)===normV(p.train)).sort((a,b)=>a.timeToStation-b.timeToStation),T=`<span class="tno">${esc(p.train)}</span>`;
   if(!preds.length)h+=`<p>${T}${booked-now>3600e3?'Not running yet / too far ahead.':p.kind!=='Platform'&&!working?'Not in TfL arrivals yet (starts from the depot road).':'Not found in TfL arrivals right now.'} Checking again every 30 s.</p>`;
@@ -348,7 +348,7 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]`)){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agr-v35';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agr-v36';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -460,3 +460,15 @@ async function fillBack(root){for(const el of (root||document).querySelectorAll(
   const man=LS.get('covBack',{})[d];el.innerHTML=(t.err?`<span class="err">Travel back to Arnos Grove: ${esc(t.err)} Type the minutes:</span>`:`Travel back to Arnos Grove: <b>${t.m} min</b> (${esc(t.src)})${t.arr?`, there about <b>${t.arr}</b>`:''}.`)+` <span class="muted">By hand: <input class="cbMan" type="number" min="0" style="width:4.5em" value="${man??''}"> min</span>`;
   const i=el.querySelector('.cbMan');i.onchange=()=>{const m=LS.get('covBack',{});if(i.value==='')delete m[d];else m[d]=+i.value;LS.set('covBack',m);fillBack(el.parentNode)}}}
 if(new URLSearchParams(location.search).has('debug'))window.__dbg={cardRows,resolveFor};
+
+// ---- relief point wording: only what the card prints (platform number, E/W side, road), never invented ----
+const STN={AGR:'Arnos Grove',HMD:'Hammersmith',ACT:'Acton Town',NFD:'Northfields',CFS:'Cockfosters',RLN:'Rayners Lane',UXB:'Uxbridge',SHR:'South Harrow'};
+function placeTxt(at,dir){const [code,q]=String(at||'').split(' '),nm=STN[code],D=dir&&dir!=='see card'?dir:'';
+ if(q&&/^\d+$/.test(q))return`${esc(code)} Platform ${q}${nm?` (${nm})`:''}${D?` · ${D}`:''}`;
+ if(q==='E'||q==='W')return`${esc(code)} (${q==='E'?'Eastbound':'Westbound'})`;
+ if(q==='SG')return`${esc(code)} sidings (SG)`;if(q&&/^DT[EW]?$/.test(q))return`${esc(code)} depot road ${q}`;if(q)return esc(at);
+ return`${esc(code)}${D?` (${D})`:''}`}
+function reliefOf(r,ps,i){const p=ps[i];if(!p)return null;const c=r.covering&&!r.covering.missing?r.covering:null;
+ if(c&&i===ps.length-1)return{t:c.end.t,at:c.end.at,dir:c.end.rev?'Reverser':c.end.dir,getOff:true};
+ if(!p.relief)return null;const s=(p.endAt||'').match(/ (E|W)$/);return{t:p.relief,at:p.endAt||'',dir:s?'':''}}
+const relTxt=x=>x?`${x.t} ${x.at?placeTxt(x.at,x.dir):'(place not on card)'}`:'';
