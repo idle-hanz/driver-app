@@ -179,7 +179,7 @@ async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!doc
     else if(ap)h+=`<p class="muted">${T}is on an earlier trip (due at your platform ${new Date(ap.expectedArrival).toTimeString().slice(0,5)}). Your ${p.time} pick-up is not predicted yet.</p>`;
     else h+=`<p class="muted">${T}not yet predicted at your pick-up platform.</p>`}}}
  out.innerHTML=h+'<p class="muted" style="margin-top:12px">Other pick-ups on this duty:</p>'+sel;bindSel();trTimer=setTimeout(myTrains,30000)}
-async function lineStatus(){try{const j=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Status')).json();const s=(j[0]&&j[0].lineStatuses)||[];
+async function lineStatus(){return lsCheck();try{const j=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Status')).json();const s=(j[0]&&j[0].lineStatuses)||[];
  $('#lineStatus').innerHTML='<p>Piccadilly line: '+s.map(x=>`<b>${esc(x.statusSeverityDescription)}</b>${x.reason?' — '+esc(x.reason):''}`).join('; ')+'</p>'}catch(e){$('#lineStatus').textContent=''}}
 let ftTimer=null;
 async function findTrain(){clearTimeout(ftTimer);const num=normV(($('#ftNum').value||'').replace(/\D/g,'')),out=$('#ftOut');if(!num){out.innerHTML='';return}
@@ -221,7 +221,7 @@ async function calc(on){if(!/^\d\d:\d\d$/.test(on))return;const date=$('#paceDay
  const pk=r&&((r.card&&r.card.pickups)||(r.compact&&r.compact.pickups))||[],first=pk[0];let wake,wakeTxt;
  if(first&&!r.cover&&!r.spare){wake=t2m(first.time)-10;wakeTxt=`Wake up (10 min before ${esc(first.train)} pick-up ${first.time})`}else{wake=son-10;wakeTxt='Wake up (10 min before sign-on)'}
  $('#paceOut').innerHTML+='<p class="muted" id="paceBusy">Working out drive time…</p>';
- const j=await driveTime(date,arrive),leave=j.leave;lastPace={leave,wake};alarmLabels();
+ const j=await driveTime(date,arrive),leave=j.leave;lastPace={leave,wake};alarmLabels();lsRender();
  $('#paceOut').innerHTML=(document.getElementById('manOn')?$('#paceOut').innerHTML.replace(/<p class="muted" id="paceBusy">.*?<\/p>/,''):'')+`<table><tr><td>Leave home</td><td class="big">${m2t(leave)}</td></tr>${cov?`<tr><td>Arrive Arnos Grove and book on (spare ${esc(cov.spareDuty)})</td><td><b>${on}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Leave Arnos by</td><td class="big" id="leaveArnos">…</td></tr><tr><td>Lie down at ${esc(cov.start.at)} (40 min)</td><td><b>${m2t(t2m(cov.start.time)-40)}</b></td></tr><tr><td>Take over ${esc(cov.start.train)} at ${esc(cov.start.at)}${dTxt(cov.start)}</td><td><b>${cov.start.time}</b></td></tr>${cov.end&&!cov.end.toEnd?`<tr><td>Driving ends at ${esc(cov.end.at)}</td><td><b>${cov.end.t}</b></td></tr>`:''}<tr><td>Spare finishes (book off)</td><td>${cov.spareOff?`<b>${cov.spareOff}</b>`:`<input class="spOff" data-d="${date}" placeholder="HH:MM" size="5"> <span class="err">not known, type it</span>`}</td></tr></table><div id="travelOut"></div>`
  :`<tr><td>Arrive at depot and lie down</td><td><b>${m2t(arrive)}</b></td></tr><tr><td>${wakeTxt}</td><td><b>${m2t(wake)}</b></td></tr><tr><td>Sign on</td><td><b>${on}</b></td></tr></table>`}
  <p>${j.tt?`Typical drive at ${m2t(leave)}: <b>${j.m} min</b> (${j.src})`:`Drive ${j.m} min (<span class="err">${j.src}</span>)`} + ${S.margin} min safety margin${cov?' · no lie-down at Arnos (covering)':` · lie-down ${S.lie} min`}</p>`;bindSpOff($('#paceOut'),()=>calc(on));if(cov)leaveArnos(date,cov,son)}
@@ -244,7 +244,7 @@ $('#geoDepot').onclick=async()=>{const g=$('#geoMsg'),key=$('#sTT').value.trim()
  g.textContent='Looking up the depot…';try{const j=await (await fetch(`https://api.tomtom.com/search/2/geocode/${encodeURIComponent(q)}.json?countrySet=GB&limit=1&key=${encodeURIComponent(key)}`)).json();const p=j.results&&j.results[0]&&j.results[0].position;if(!p)throw new Error('Address not found.');
   S.depotLL=`${p.lat.toFixed(5)},${p.lon.toFixed(5)}`;$('#sDepotLL').value=S.depotLL;LS.set('settings',S);g.textContent=`Depot set to ${S.depotLL} (${esc(j.results[0].address&&j.results[0].address.freeformAddress||q)}). Check it on a map.`}catch(e){g.textContent='Lookup failed: '+e.message+' Type lat,lon by hand.'}};
 const IS_ANDROID=/Android/i.test(navigator.userAgent);
-function alarmDate(min){const d=new Date(($('#paceDay').value||todayISO())+'T00:00:00');d.setMinutes(min);return d}
+let alarmDay=null;function alarmDate(min){const d=new Date((alarmDay||$('#paceDay').value||todayISO())+'T00:00:00');d.setMinutes(min);return d}
 function icsFile(min,label){const d=alarmDate(min),z=x=>String(x).padStart(2,'0'),f=x=>`${x.getFullYear()}${z(x.getMonth()+1)}${z(x.getDate())}T${z(x.getHours())}${z(x.getMinutes())}00`,e=new Date(+d+5*60e3);
  const ics=['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//AGR Driver//EN','BEGIN:VEVENT',`UID:${+d}-${label.replace(/\W/g,'')}@agr-driver`,`DTSTAMP:${f(new Date())}`,`DTSTART:${f(d)}`,`DTEND:${f(e)}`,`SUMMARY:${label}`,'BEGIN:VALARM','ACTION:DISPLAY',`DESCRIPTION:${label}`,'TRIGGER:PT0M','END:VALARM','END:VEVENT','END:VCALENDAR'].join('\r\n');
  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([ics],{type:'text/calendar'}));a.download=label.replace(/\W+/g,'-').toLowerCase()+'.ics';a.click()}
@@ -258,7 +258,8 @@ $('#alarmBtn').onclick=()=>lastPace&&alarm(lastPace.wake,'Wake up - sign on soon
 $('#drive').onclick=()=>{location.href='https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination='+encodeURIComponent(S.depotLL||S.depot)};
 $('#paceDay').onchange=paceView;
 const hours=()=>LS.get('hours',[]);
-function hoursView(){$('#hTab').innerHTML='<tr><th>Date</th><th>Time</th><th>Station</th><th>Duty</th><th>OT</th><th>Finish</th><th>Driven</th><th>Back on</th><th></th></tr>'+hours().map((h,i)=>`<tr><td>${h.date}</td><td>${esc(h.time||'')}</td><td>${esc(h.station||'')}</td><td>${esc(h.duty)}</td><td>${h.ot}</td><td>${esc(h.finish)}</td><td>${esc(h.driven||'')}</td><td>${esc(h.train)}</td><td><button data-i="${i}" class="del">✕</button></td></tr>`).join('');
+function hoursView(){$('#hTab').innerHTML='<tr><th>Date</th><th>Time</th><th>Station</th><th>Duty</th><th>OT</th><th>Finish</th><th>Driven</th><th>Back on</th><th></th></tr>'+hours().map((h,i)=>`<tr><td>${h.date}</td><td>${esc(h.time||'')}</td><td>${esc(h.station||'')}</td><td>${esc(h.duty)}</td><td>${h.ot}</td><td>${esc(h.finish)}</td><td>${esc(h.driven||'')}</td><td>${esc(h.train)}</td><td><button data-i="${i}" class="dkt b s">Docket</button> <button data-i="${i}" class="del">✕</button></td></tr>`).join('');
+ document.querySelectorAll('.dkt').forEach(b=>b.onclick=()=>docket(+b.dataset.i));
  document.querySelectorAll('.del').forEach(b=>b.onclick=()=>{if(confirm('Delete entry?')){const a=hours();a.splice(+b.dataset.i,1);LS.set('hours',a);hoursView()}})}
 $('#hDate').value=today();$('#hDate').onchange=()=>{$('#hDuty').value=duties()[$('#hDate').value]||'';hoursDefaults()};$('#hDuty').value=duties()[today()]||'';
 $('#hAdd').onclick=()=>{const a=hours();a.push({date:$('#hDate').value,time:$('#hTime').value,station:scrub($('#hStation').value),duty:scrub($('#hDuty').value),ot:+$('#hOT').value||0,finish:$('#hFin').value,driven:scrub($('#hDriven').value),train:scrub($('#hSame').checked?$('#hDriven').value:$('#hTrain').value),note:scrub($('#hNote').value)});a.sort((x,y)=>x.date.localeCompare(y.date));LS.set('hours',a);hoursView()};
@@ -315,7 +316,7 @@ function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
- ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:paceView,hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:weekView})[b.dataset.t]()});
+ ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:()=>{paceView();tomorrowCard();lsRender()},hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:()=>{weekView();tomorrowCard();lsRender();remindersView()},_w:weekView})[b.dataset.t]()});
 async function reload(){DATA=await loadData();summary();browseFill()}
 // ---- What changed after an import: compare parsed results for every entered day from this week on ----
 function daySnap(d){const r=resolve(d);if(!r)return null;const pk=r.card&&r.card.pickups&&r.card.pickups.length?r.card.pickups.map(p=>`${p.train} ${p.time} ${p.at}${p.rev?' (Reverser)':''}`).join(', '):null;
@@ -343,7 +344,7 @@ $('#clearData').onclick=async()=>{if(!confirm('Delete all notices, PDFs, duties,
 function toast(t){const d=document.createElement('div');d.className='toast';d.textContent=t;document.body.appendChild(d);setTimeout(()=>d.remove(),4000)}
 reparseIfOld().then(r=>{if(r)toast('Updated card data')}).catch(e=>toast('Card data update failed: '+(e&&e.message||e))).then(reload).then(()=>{const w=new URLSearchParams(location.search).get('week');wkOptions();if(w){const e=sat(w);if(![...$('#wk').options].some(x=>x.value===e))$('#wk').insertAdjacentHTML('afterbegin',`<option value="${e}">w/e Sat ${e}</option>`);$('#wk').value=e}weekView();cardView();
  const hm=(location.hash||'').slice(1).split('/'),tab=hm[0];if(tab&&document.querySelector(`nav button[data-t="${tab}"]`)){if(tab==='card'&&/^\d{4}-\d\d-\d\d$/.test(hm[1]||''))cardFromWeek=hm[1];document.querySelector(`nav button[data-t="${tab}"]`).click()}});
-const APP_VERSION='agr-v33';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agr-v34';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
@@ -377,3 +378,65 @@ if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;nav
 $('#geoTest').onclick=async()=>{const o=$('#geoTestOut');o.textContent='Testing… permission: '+await permState();const t0=Date.now();
  try{const p=await getPos(s=>o.textContent+=`\nTrying ${s}…`);const c=p.coords;o.textContent+=`\nOK via ${p.via} in ${((Date.now()-t0)/1000).toFixed(1)} s\nlat ${c.latitude.toFixed(5)}, lon ${c.longitude.toFixed(5)}\naccuracy ±${Math.round(c.accuracy)} m\nfix age ${Math.round((Date.now()-p.timestamp)/1000)} s`}
  catch(e){o.textContent+=`\nFAILED after ${((Date.now()-t0)/1000).toFixed(1)} s\n${e.message}`}};
+
+// ---- Overtime docket: one clean screen per Hours entry. Blank = fill in; never guessed. Edits are saved on the entry. ----
+function docketFields(h){const r=resolve(h.date),cv=r&&r.covering&&!r.covering.missing?r.covering:null,dd=new Date(h.date+'T12:00:00');
+ const sched=cv?(cv.spareOff||''):(r&&r.times&&r.times.sign_off?r.times.sign_off.slice(0,5):'');const back=h.train&&h.driven&&normV(h.train)!==normV(h.driven)?h.train:(h.train||h.driven?'same train':'');
+ const f=[['date','Date',`${DAYS[dd.getDay()]} ${h.date.slice(8)}/${h.date.slice(5,7)}/${h.date.slice(0,4)}`],['duty','Duty',(h.duty||'')+(cv?` (covering ${cv.duty})`:'')],['on','Sign on',r&&r.times&&r.times.sign_on||''],
+  ['sched','Scheduled finish'+(cv?' (spare)':''),sched],['off','Actual book-off',h.time||''],['ot','Overtime (min)',h.ot?String(h.ot):''],['driven','Train driven',h.driven||''],['back','Travelled back on',back],['where','Booked off at',h.station||''],['note','Notes',h.note||'']];
+ return f.map(([k,l,v])=>({k,l,v:(h.dk&&k in h.dk)?h.dk[k]:v}))}
+function docket(i){const all=hours(),h=all[i];if(!h)return;let o=$('#dk');if(!o){o=document.createElement('div');o.id='dk';document.body.appendChild(o)}
+ const fs=docketFields(h);o.innerHTML=`<div class="dkin"><h2>Overtime docket</h2><table>${fs.map(x=>`<tr><th>${x.l}</th><td><input data-k="${x.k}" value="${esc(x.v)}" placeholder="—"></td></tr>`).join('')}</table>
+ <p class="dkhint">Blank boxes: fill in yourself. Taken from your log and card; edit anything that's wrong.</p><p><button class="b" id="dkCopy">Copy</button> <button class="b s" id="dkClose">Close</button></p><p id="dkMsg"></p></div>`;
+ o.classList.add('on');o.querySelectorAll('input').forEach(inp=>inp.onchange=()=>{const a2=hours();a2[i].dk=Object.assign({},a2[i].dk,{[inp.dataset.k]:inp.value.trim()});LS.set('hours',a2)});
+ $('#dkClose').onclick=()=>o.classList.remove('on');
+ $('#dkCopy').onclick=async()=>{const txt='Overtime docket\n'+[...o.querySelectorAll('input')].map(inp=>`${inp.closest('tr').querySelector('th').textContent}: ${inp.value.trim()}`).join('\n');
+  try{await navigator.clipboard.writeText(txt);$('#dkMsg').textContent='Copied.'}catch(e){const t=document.createElement('textarea');t.value=txt;document.body.appendChild(t);t.select();try{document.execCommand('copy');$('#dkMsg').textContent='Copied.'}catch(_){$('#dkMsg').textContent='Copy failed. Long-press to select instead.'}t.remove()}}}
+// ---- Tomorrow at a glance ----
+async function planDay(date){const r=resolve(date);if(!r)return{r};if(r.special)return{r};const cov=r.covering&&!r.covering.missing?r.covering:null;
+ const on=r.times&&r.times.sign_on;if(!on||!/^\d\d:\d\d/.test(on))return{r,noOn:true};const son=t2m(on),arrive=cov?son:son-(+S.lie);
+ const pk=(r.card&&r.card.pickups)||[],first=pk[0];const wake=first&&!r.cover&&!r.spare?t2m(first.time)-10:son-10;const j=await driveTime(date,arrive);return{r,cov,son,leave:j.leave,drive:j,wake,first}}
+function todayDone(){const n=NOW();if(n.getHours()>=15)return true;const r=resolve(todayISO());if(!r||r.special)return true;const off=r.times&&r.times.sign_off;if(!off||!/^\d\d:\d\d/.test(off))return false;
+ const son=r.times.sign_on&&/^\d\d:\d\d/.test(r.times.sign_on)?t2m(r.times.sign_on):0,nowM=n.getHours()*60+n.getMinutes();return((nowM-son+1440)%1440)>((t2m(off.slice(0,5))-son+1440)%1440)}
+async function tomorrowCard(){const els=['#tmrW','#tmrP'].map(s=>$(s)).filter(Boolean);if(!todayDone()){els.forEach(e=>e.innerHTML='');return}
+ const d=addD(todayISO(),1),dd=new Date(d+'T12:00:00'),lbl=`${DAYS[dd.getDay()]} ${d.slice(8)}/${d.slice(5,7)}`,ch=(LS.get('changes',{})[d]||{}).seen===false?' <span class="tag chgb">Changed</span>':'';
+ const p=await planDay(d),r=p.r;let h=`<div class="tmr"><p class="muted">Tomorrow · ${lbl}${ch}</p>`;
+ if(!r)h+='<p class="big">No duty entered for tomorrow</p>';
+ else if(r.special)h+=`<p class="big">${r.duty==='RD'?'Rest day tomorrow':esc(r.type)+' tomorrow'}</p>`;
+ else{const type=r.covering&&!r.covering.missing?`Spare ${esc(r.covering.spareDuty)} covering ${esc(r.covering.duty)}`:(r.tmi||r.spare?'Spare':r.cover?'Cover':esc(r.type));
+  h+=`<p><b class="big">${esc(r.duty)}</b> <span class="tag ${r.type==='Engineering'?'eng':''}">${r.type}</span> ${type!==r.type?`<span class="tag">${type}</span>`:''}</p>`;
+  if(p.noOn)h+='<p class="err">Sign-on time not known. Check Pacing.</p>';
+  else{h+=`<table><tr><td>Sign on</td><td><b>${m2t(p.son)}</b> ${esc(r.onAt||'')}</td></tr><tr><td>Leave home</td><td><b>${m2t(p.leave)}</b> <span class="muted">(${p.drive.tt?'TomTom':'estimate'})</span></td></tr><tr><td>Wake alarm</td><td><b>${m2t(p.wake)}</b></td></tr>`;
+   const f=p.cov?p.cov.start:p.first;if(f)h+=`<tr><td>${p.cov?'Take over':'First pick-up'}</td><td><b>${esc(f.train)}</b> ${f.time} ${esc(f.at)} · ${f.rev?'Reverser':esc(f.dir&&f.dir!=='see card'?f.dir:'')}</td></tr>`;
+   h+=`</table><p><button class="b s tmrWake">Set wake alarm (${m2t(p.wake)})</button></p>`}}
+ h+='</div>';els.forEach(e=>{e.innerHTML=h;const b=e.querySelector('.tmrWake');if(b)b.onclick=()=>{alarmDay=d;alarm(p.wake,'Wake up - sign on soon');setTimeout(()=>alarmDay=null,3000)}})}
+// ---- Line status alert (checks only while the app is open or just reopened) ----
+let LSTAT=null,lsTimer=null;
+async function lsCheck(){try{const j=await (await fetch('https://api.tfl.gov.uk/Line/piccadilly/Status',{cache:'no-store'})).json();const s=(j[0]&&j[0].lineStatuses)||[];if(!s.length)throw new Error('no status');
+  const bad=s.filter(x=>x.statusSeverity!==10);LSTAT={at:NOW(),ok:!bad.length,items:s.map(x=>({sev:x.statusSeverity,desc:x.statusSeverityDescription,reason:x.reason||''})),severe:bad.some(x=>x.statusSeverity<=6||/severe|suspend|clos/i.test(x.statusSeverityDescription))}}
+ catch(e){LSTAT={at:NOW(),err:true}}lsRender();lsNotify()}
+function lsHtml(lead){if(!LSTAT)return'';const t=m2t(LSTAT.at.getHours()*60+LSTAT.at.getMinutes());if(LSTAT.err)return`<div class="ls lserr">Couldn't check line status (${t}).</div>`;
+ if(LSTAT.ok)return`<div class="ls lsok">Piccadilly line: Good Service <span class="muted">(${t})</span></div>`;
+ return`<div class="ls ${LSTAT.severe?'lssev':'lsmin'}">${lead?`<b class="big">${lead}</b><br>`:''}<b>Piccadilly line: ${LSTAT.items.filter(x=>x.sev!==10).map(x=>esc(x.desc)).join(', ')}</b> <span class="muted">(checked ${t})</span>${LSTAT.items.filter(x=>x.reason).map(x=>`<p>${esc(x.reason)}</p>`).join('')}</div>`}
+function lsRender(){const w=$('#lsW'),t=$('#lineStatus'),pp=$('#lsP');if(w)w.innerHTML=lsHtml();if(t)t.innerHTML=lsHtml();
+ if(pp){let lead='';if(LSTAT&&!LSTAT.ok&&!LSTAT.err&&lastPace&&$('#paceDay').value===todayISO()){const n=NOW(),m=n.getHours()*60+n.getMinutes();if(m>=lastPace.leave-90&&m<=lastPace.leave+20)lead='Check before you leave'}pp.innerHTML=lsHtml(lead)}}
+let lastHidden=0;
+function lsNotify(){if(!LSTAT||LSTAT.err||LSTAT.ok||!('Notification'in window)||Notification.permission!=='granted'||!LS.get('lsNotif',false))return;const key=LSTAT.items.map(x=>x.desc+x.reason).join('|');if(LS.get('lsLastNote','')===key)return;
+ if(document.visibilityState==='hidden'&&Date.now()-lastHidden>30*60e3)return;LS.set('lsLastNote',key);const body=LSTAT.items.filter(x=>x.sev!==10).map(x=>x.desc+(x.reason?': '+x.reason:'')).join('\n').slice(0,300);
+ navigator.serviceWorker&&navigator.serviceWorker.getRegistration().then(r=>r?r.showNotification('Piccadilly line: '+LSTAT.items.filter(x=>x.sev!==10).map(x=>x.desc).join(', '),{body,tag:'line-status',icon:'icon-192.png'}):new Notification('Piccadilly line',{body}))}
+function lsSchedule(){clearInterval(lsTimer);const r=resolve(todayISO());const work=r&&!r.special;if(work)lsTimer=setInterval(()=>{if(document.visibilityState==='visible'||Date.now()-lastHidden<30*60e3)lsCheck()},3*60e3)}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')lastHidden=Date.now();else{lsCheck();tomorrowCard()}});
+{const nb=$('#lsNotif');if(nb){const upd=()=>{const p='Notification'in window?Notification.permission:'unsupported';nb.textContent=p==='granted'&&LS.get('lsNotif',false)?'Line status notifications: on (tap to turn off)':'Turn on line status notifications';$('#lsNotifMsg').textContent=p==='denied'?'Notifications are blocked for this site in Chrome settings.':p==='unsupported'?'This browser does not support notifications.':''};
+ nb.onclick=async()=>{if(!('Notification'in window))return upd();if(LS.get('lsNotif',false)&&Notification.permission==='granted'){LS.set('lsNotif',false);return upd()}const p=await Notification.requestPermission();LS.set('lsNotif',p==='granted');upd()};upd()}}
+setTimeout(()=>{lsCheck();lsSchedule();tomorrowCard();remindersView()},800);setInterval(tomorrowCard,10*60e3);
+
+// ---- Notice reminder: uses only dates parsed from the loaded files ----
+function remindersView(){const el=$('#remW');if(!el)return;const t=todayISO(),in7=addD(t,7),in14=addD(t,14),dis=LS.get('remDismiss',{}),out=[];
+ const fmt=d=>{const x=new Date(d+'T12:00:00');return`${DAYS[x.getDay()].slice(0,3)} ${d.slice(8)}/${d.slice(5,7)}`};
+ for(const n of DATA.notices||[]){const ds=(n.dates||[]).filter(Boolean).sort();if(!ds.length)continue;const end=ds[ds.length-1];if(end>=t&&end<=in7)out.push({k:'n:'+n.notice,h:`Notice ${esc(n.notice)} ends ${fmt(end)}, load the next one when it's out.`})}
+ for(const b of DATA.normal||[])if(b.until&&b.until>=t&&b.until<=in7)out.push({k:'b:'+(b.timetable||b.pdf)+':'+b.until,h:`Duty book ${esc(b.timetable||'')} ends ${fmt(b.until)}, load the new book when it's out.`});
+ for(const[d,v]of Object.entries(duties()).sort()){if(d<t||d>in14||!v)continue;const r=resolve(d);if(!r||r.special)continue;
+  if(r.type==='Engineering'&&!r.card&&!r.spare&&!r.cover&&!(r.covering&&!r.covering.missing))out.push({k:'d:'+d+':'+r.notice,h:`${fmt(d)} duty ${esc(r.duty)} is in engineering notice ${esc(r.notice)} but its running card PDF isn't loaded.`});
+  if(r.type==='Normal'&&r.warn)out.push({k:'p:'+d,h:`${fmt(d)} is after the end of the loaded duty book. Load the new book or the notice for that day.`})}
+ const show=out.filter(x=>!dis[x.k]);el.innerHTML=show.length?show.map(x=>`<div class="rem"><span>⚠ ${x.h}</span><button class="b s remx" data-k="${esc(x.k)}" aria-label="Dismiss">Dismiss</button></div>`).join(''):'';
+ el.querySelectorAll('.remx').forEach(b=>b.onclick=()=>{const d2=LS.get('remDismiss',{});d2[b.dataset.k]=1;LS.set('remDismiss',d2);remindersView()})}
