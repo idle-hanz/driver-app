@@ -38,3 +38,4 @@ table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.ou
 .rem{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#3b2a10;border:1px solid #c98a2b;color:#ffe2b0;border-radius:10px;padding:6px 10px;margin:6px 0}.rem .b{flex:none}
 .getoff{font-size:1.1em}.getoffTag{background:#c62828;color:#fff}tr.tail td{background:#123a1f;color:#cfe9d4;font-weight:600}.tback{margin:4px 0}
 .relief{margin-top:4px;font-size:1.05em}
+.loadpdf{display:block;text-align:center;font-size:1.25em;padding:16px;margin:10px 0;cursor:pointer}.setup{border:1px solid #2a3a66;border-radius:10px;padding:8px;margin:8px 0}.setupcard{border:2px solid #4a7bd0}label.inl{display:block;margin:6px 0}

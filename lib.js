@@ -23,7 +23,7 @@ export async function importCsvs(files){const st=(await idb.get('kv','notices'))
 async function pageLines(page){const tc=await page.getTextContent(),rows=[];
  for(const it of tc.items){if(!it.str.trim())continue;const y=it.transform[5],x=it.transform[4];let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r)rows.push(r={y,hh:0,items:[]});r.hh=Math.max(r.hh,it.height||0);r.items.push({x,w:it.width,s:it.str})}
  rows.sort((a,b)=>b.y-a.y);const out=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim());
- out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.ph=page.view[3];return out}
+ out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.x0=rows.map(r=>Math.min(...r.items.map(i=>i.x)));out.ph=page.view[3];return out}
 const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?\b)?)/;
 export function meals(lines){const out=[],seen=new Set();for(const m of lines.join('\n').matchAll(/Meal\s+Relief\s+(\d\d:\d\d)\s+to\s+(\d\d:\d\d)\s+at\s+([A-Z][A-Za-z ]{1,20}?)(?=\s{2,}|\s*$|\s+\d|\n)/gim)){const k=m[1]+m[2];if(seen.has(k))continue;seen.add(k);out.push({from:m[1],to:m[2],at:m[3].trim()})}return out}
 // Every timing point (time + place) in a trip block, in card order: departures and arrivals, e.g. 10:29 CFS, 10:49 AGR W
@@ -46,6 +46,29 @@ function guessNotice(name,text,notices,rcPages){
  // RC books don't print the notice number: match duty, weekday and sign-on against the imported CSVs
  const score={};for(const p of rcPages)for(const n of Object.values(notices)){const d=n.duties&&n.duties[p.duty];if(d&&d.sign_on===p.on&&(!p.day||p.day===n.day))score[n.notice]=(score[n.notice]||0)+1}
  const best=Object.entries(score).sort((a,b)=>b[1]-a[1])[0];return best?best[0]:null}
+
+// ---- Notice PDF (Train Staff Duty Schedule) -> same data the CSVs gave. Uses only what is printed. ----
+const NT=/\d\d[:BG]\d\d/.source,DUTY_LINE=new RegExp(`^(\\d{3}) (${NT}) ([A-Z]{2,4})\\b`),DOW={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};
+export function isNoticePdf(pages){return /Train Staff Duty Schedule No/i.test(pages.slice(0,2).flat().join(' '))}
+export function parseNotice(pages){const txt=pages.slice(0,2).flat().join('\n'),nm=txt.match(/Schedule No\.?:?\s*(P\d\d)\s*\/\s*(\d{3})/i);if(!nm)return null;
+ const notice=nm[1].toUpperCase()+'/'+nm[2],L=[];pages.forEach((ls,pi)=>ls.forEach((s,j)=>L.push({s,x:ls.x0?ls.x0[j]:0,pi,j})));
+ const cand=L.filter(l=>DUTY_LINE.test(l.s));if(!cand.length)return{notice,dates:[],duties:{},kind:'FULL'};const dx=Math.min(...cand.map(l=>l.x));
+ const isDuty=l=>DUTY_LINE.test(l.s)&&l.x<=dx+6;
+ // dates: weekday + dd/mm/yy tokens printed in the page-1 header (Operates on: ...), before the first duty line
+ const dates=new Set();for(const l of L){if(isDuty(l))break;for(const m of l.s.matchAll(/\b(Sun|Mon|Tue|Wed|Thu|Fri|Sat) (\d\d)\/(\d\d)\/(\d\d)\b/g)){const iso=`20${m[4]}-${m[3]}-${m[2]}`,d=new Date(iso+'T12:00:00');if(d.getDay()===DOW[m[1]])dates.add(iso)}}
+ const duties={},compactHl={};let sec='main',cur=null;const skip=/Schedule No|^Line:|^Depot:|^For:|^Duty Report|^No\. Time|^Nt\b|RESTRICTED|^Schedule compiled|^Produced by|^#+$|^\*:/;
+ const close=()=>{if(!cur)return;const b=cur.lines.join('\n');let fin=null;for(const s of cur.lines){const m=s.match(new RegExp(`(${NT}) (\\*|[A-Z]{2,4}(?: [A-Z0-9]{1,3})?) (\\d\\d:\\d\\d)(?: (O))?$`));if(m)fin=m}
+  duties[cur.duty]={sign_on:cur.on,onAt:cur.at,length:fin?fin[3]:'',sign_off:fin?fin[1]:'',section:sec,group:'',tmi:TMI.test(b)?'1':'0',oc:fin&&fin[4]?'1':'0',clock_change:'0',_on:cur.on,_off:fin?fin[1]:''};cur=null};
+ for(const l of L){const s=l.s;if(/^COVER DUTIES$/i.test(s)){close();sec='cover';continue}if(/^SPARE DAYS ON THE ROTA$/i.test(s)){close();sec='spare';continue}if(skip.test(s))continue;
+  if(isDuty(l)){close();const m=s.match(DUTY_LINE);if(duties[m[1]])continue;cur={duty:m[1],on:m[2],at:m[3],lines:[s.slice(m[0].length)]};compactHl[m[1]]={page:l.pi+1,j:l.j,tmi:false};continue}
+  if(cur)cur.lines.push(s)}close();
+ for(const d in compactHl)compactHl[d].tmi=duties[d].tmi==='1';
+ // clock change: on a notice that prints B/G times, a duty is marked when it is on duty through the 02:00-03:00 change (as the issued CSVs did)
+ const cc=Object.values(duties).some(d=>/\dB\d|\dG\d/.test(d._on+d._off))||/\d\d[BG]\d\d/.test(pages.flat().join(' '));const mm=t=>{const m=String(t).match(/^(\d\d)[:BG](\d\d)/);return m?+m[1]*60+ +m[2]:null};
+ for(const d of Object.values(duties)){if(cc){const a=mm(d._on),z=mm(d._off);if(a!=null&&z!=null&&!/B/.test(d._off)){const s=a>=720?a-1440:a;let e=z>=720&&s<0?z-1440:z;if(e<s)e+=1440;if(s<=120&&e>=180)d.clock_change='1'}}delete d._on;delete d._off}
+ const ds=[...dates].sort(),nMain=Object.values(duties).filter(d=>d.section==='main').length;
+ // changes-only notices print no explicit flag: treat a short list (< 30 main duties) as changes only
+ return{notice,dates:ds,day:ds.length?['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][new Date(ds[0]+'T12:00:00').getDay()]:'',kind:nMain<30?'CHANGES':'FULL',duties,compactHl}}
 
 // ---- Normal (current) duty book: detected by content ("DUTY BOOK" + "Duty: NNN <day type> Duty Length") or "Duty Book" in the name ----
 const WD={sun:0,mon:1,tue:2,wed:3,thu:4,fri:5,sat:6};
@@ -72,29 +95,36 @@ function parseDutyBook(name,pages){const first=pages.slice(0,3).flat().join(' ')
  return{name,timetable:tn?tn[1]:'',from:v?isoFrom(v[1],v[2],v[3]):'',until:v?isoFrom(v[4],v[5],v[6]):'',duties:duties.filter(d=>d.days.length).concat(covers.filter(c=>c.days.length))}}
 function looksLikeDutyBook(name,pages){const t=pages.slice(0,3).flat().join(' ');const hdr=pages.flat().some(l=>/^Duty:\s*\d{3} .+ Duty Length:/.test(l));
  return hdr&&(/duty\s*book/i.test(name)||/DUTY BOOK/i.test(t))&&!/P\s*26\s*[-_/ ]?\s*\d{3}/i.test(name)}
-export const PARSER_VERSION=8;
+export const PARSER_VERSION=9;
 // 'To manager's instructions' spare turns: 'TO MANAGER'S INSTRUCTIONS' (P26 compact lines), 'MGR INSTR.', 'Duty Managers Instructions', 'DMI'
 export const TMI=/MANAGER'?S?\s+INSTRUCTIONS|MGR\.?\s*INSTR|DUTY\s+MANAGER'?S?'?\s+INSTR|\bDMI\b/i;
 export async function importPdfs(files,progress){const cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},notices=(await idb.get('kv','notices'))||{};
- const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null};
+ const sum={files:files.length,pdfs:0,rcPages:0,compactPages:0,errors:[],normal:null,notices:[],rcs:[]};
  try{if(navigator.storage&&navigator.storage.persist)await navigator.storage.persist()}catch(e){}
- for(const f of files){try{
+ const read=[];for(const f of files){try{
   const buf=await f.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf.slice(0,5)));
   if(head!=='%PDF-'){sum.errors.push(`${f.name}: not a PDF`);continue}
   const blob=new Blob([buf],{type:'application/pdf'}),doc=await pdfjs.getDocument({data:new Uint8Array(buf.slice(0))}).promise;
   const pages=[];for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}
-  await doc.destroy();
+  await doc.destroy();const kind=looksLikeDutyBook(f.name,pages)?0:isNoticePdf(pages)&&!pages.some(l=>/Duty:\s*\d{3}/.test(l.join(' ')))?1:2;read.push({f,blob,pages,kind})}catch(e){sum.errors.push(`${f.name}: ${(e&&e.message)||e}`)}}
+ read.sort((a,b)=>a.kind-b.kind);
+ for(const {f,blob,pages,kind} of read){try{
+  if(kind===1){const n=parseNotice(pages);if(!n||!Object.keys(n.duties).length){sum.errors.push(`${f.name}: looks like a notice but no duties could be read`);continue}
+   const key=n.notice,id='C-'+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
+   notices[key]={notice:key,kind:n.kind,dates:n.dates,day:n.day,status:'OK',src:'pdf',duties:Object.fromEntries(Object.entries(n.duties).map(([k,v])=>[k,Object.fromEntries(KEEP.map(c=>[c,v[c]||'']))]))};
+   compact[key]={};for(const [d,h] of Object.entries(n.compactHl)){const ls=pages[h.page-1];compact[key][d]={pdf:id,page:h.page,on:n.duties[d].sign_on,onAt:n.duties[d].onAt,tmi:h.tmi,hl:{y:ls.hl[h.j].y,hh:ls.hl[h.j].hh,ph:ls.ph}};sum.compactPages++}
+   sum.notices.push(`Notice ${key}: ${Object.keys(n.duties).length} duties, ${n.dates.map(d=>d.slice(8)+'/'+d.slice(5,7)+'/'+d.slice(2,4)).join(', ')||'no dates found'}${n.kind==='CHANGES'?' (changes only)':''}`);continue}
   if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
    const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf&&!(nb.timetable&&b.timetable===nb.timetable)&&!(nb.from&&b.from&&b.from<=nb.until&&nb.from<=b.until));/* a replacement book supersedes overlapping ones */books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
    const types=[...new Set(nb.duties.filter(d=>!d.cover).map(d=>d.dt))],nc=nb.duties.filter(d=>d.cover).length;sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length-nc} duty cards + ${nc} cover duties (${[...new Set(nb.duties.filter(d=>d.cover).map(d=>d.dt))].join(', ')}), day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}
   const rcPages=pages.map((l,i)=>{const t=l.join('\n'),d=t.match(/Duty:\s*(\d{3})\s*([A-Za-z]+)?/),on=t.match(/On:\s*(\d\d:\d\d)(?:\s+([A-Z]{2,4}))?/);return d?{i:i+1,duty:d[1],day:DAYN[d[2]]||'',on:on&&on[1],onAt:on&&on[2]||'',lines:l}:null}).filter(Boolean);
   const isRc=rcPages.length>0,key=guessNotice(f.name,pages.flat().join('\n'),notices,rcPages);
-  if(!key){sum.errors.push(`${f.name}: could not tell which notice this is — import the CSVs first, then this PDF again`);continue}
+  if(!key){sum.errors.push(`${f.name}: could not tell which notice this is. Load its notice PDF too.`);continue}
   const id=(isRc?'RC-':'C-')+key.replace('/','')+'.pdf';await idb.put('pdfs',id,blob);sum.pdfs++;
-  if(isRc){cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,onAt:p.onAt,pages:[],pickups:pickups(p.lines),meals:[]});for(const m of meals(p.lines))if(!c.meals.some(x=>x.from===m.from))c.meals.push(m);c.pages.push(p.i);sum.rcPages++}}
-  else{compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) (\d\d:\d\d)(?: ([A-Z]{2,4}))?/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,on:d[2],onAt:d[3]||'',tmi:TMI.test(l),hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
+  if(isRc){sum.rcs.push(`Running cards ${key}: ${new Set(rcPages.map(p=>p.duty)).size} duties`);cards[key]={};for(const p of rcPages){const c=cards[key][p.duty]||(cards[key][p.duty]={pdf:id,onAt:p.onAt,pages:[],pickups:pickups(p.lines),meals:[]});for(const m of meals(p.lines))if(!c.meals.some(x=>x.from===m.from))c.meals.push(m);c.pages.push(p.i);sum.rcPages++}}
+  else if(!compact[key]||!Object.keys(compact[key]).length){compact[key]={};pages.forEach((ls,i)=>{for(const l of ls){const d=l.match(/^(\d{3}) (\d\d:\d\d)(?: ([A-Z]{2,4}))?/);if(d&&!compact[key][d[1]]){const j=ls.indexOf(l);compact[key][d[1]]={pdf:id,page:i+1,on:d[2],onAt:d[3]||'',tmi:TMI.test(l),hl:{y:ls.hl[j].y,hh:ls.hl[j].hh,ph:ls.ph}};sum.compactPages++}}})}
  }catch(e){sum.errors.push(`${f.name}: ${e&&e.name==='QuotaExceededError'?'phone storage full':(e&&e.message)||e}`)}}
- await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
+ await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','notices',notices);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
  return{normal:(await idb.get('kv','normal'))||[],notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
 export async function renderPages(el,pdfName,pages,width,hl){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
