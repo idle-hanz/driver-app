@@ -3,7 +3,7 @@
 <header>AGR Driver · Piccadilly</header>
 <nav><button data-t="week" class="on">Week</button><button data-t="card">Running card</button><button data-t="trains">Trains</button><button data-t="pace">Pacing</button><button data-t="hours">Hours</button><button data-t="set">Settings</button></nav>
 <main>
-<section id="week" class="on"><div id="setupW"></div><div id="lsW"></div><div id="remW"></div><div id="tmrW"></div><div class="card"><label for="wk">Week ending (Saturday)</label><div class="wkrow"><button class="b s" id="wkPrev" aria-label="Previous week">‹</button><select id="wk"></select><button class="b s" id="wkNext" aria-label="Next week">›</button></div><button class="b s" id="wkNow">This week</button>
+<section id="week" class="on"><div id="lsW"></div><div id="remW"></div><div id="tmrW"></div><div class="card"><label for="wk">Week ending (Saturday)</label><div class="wkrow"><button class="b s" id="wkPrev" aria-label="Previous week">‹</button><select id="wk"></select><button class="b s" id="wkNext" aria-label="Next week">›</button></div><button class="b s" id="wkNow">This week</button>
 <div id="days"></div><button class="b" id="saveWeek">Save week</button>
 
 <p class="muted" id="wkMsg"></p></div></section>
@@ -17,16 +17,15 @@
 <label>Arrived at book-off (time)</label><input id="hTime" type="time"><label>Book-off station</label><input id="hStation"><label>Overtime (minutes)</label><input id="hOT" type="number" min="0" value="0"><label>Finish point</label><select id="hFin"><option>Book-off travel</option><option>Finished on platform</option></select>
 <label>Train driven</label><input id="hDriven" inputmode="numeric"><label><input type="checkbox" id="hSame" checked style="width:auto"> Same train travelled back on</label><label>Train travelled back on</label><input id="hTrain" inputmode="numeric"><label>Notes</label><input id="hNote">
 <button class="b" id="hAdd">Add to log</button><button class="b s" id="hCsv">Export CSV</button></div><div class="card"><table id="hTab"></table></div></section>
-<section id="set"><div class="card"><b>My files</b>
-<p class="muted">Your files stay on this phone. Load the copies you've been issued.</p>
-<label class="b big loadpdf" for="fPdf">Load PDFs</label><input type="file" id="fPdf" multiple accept="application/pdf,.pdf" hidden>
-<p class="muted">Select any mix of your duty book, notice PDFs (P26xxx) and running card PDFs (RC-P26xxx). The app works out which is which. You can also open a PDF in WhatsApp, Gmail or Files and use Share › AGR Driver.</p>
-<div id="csvFallback" hidden><label>Notice CSVs (fallback)</label><input type="file" id="fCsv" multiple><label>Folder (fallback)</label><input type="file" id="fDir" webkitdirectory multiple></div>
+<section id="set"><div class="card"><b>My files (stay on this phone only)</b>
+<label><b>Easiest:</b> pick the whole folder (e.g. "Driver App Phone Files") — CSVs and PDFs are imported together</label><input type="file" id="fDir" webkitdirectory multiple>
+<label>Or notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" multiple>
+<label>Duty book PDFs: RC-P26xxx-AGR.pdf <b>and</b> P26xxx-AGR.pdf (select several — Ctrl+A in the file window)</label><input type="file" id="fPdf" multiple>
 <p class="muted" id="impMsg"></p><div id="changes"></div><p class="muted" id="dataSummary"></p><button class="b s" id="clearData">Clear my data</button><p class="muted" id="appVer"></p></div><div class="card"><b>Line status</b><p class="muted">The app checks TfL line status when you open it, when you come back to it, and every 3 minutes while it is open on a work day. It cannot check when the app is closed: phones stop web apps running in the background, so don't rely on notifications to wake you.</p><button class="b s" id="lsNotif">Turn on line status notifications</button><p class="muted" id="lsNotifMsg"></p></div><div class="card">
 <label>Depot address / destination for Maps (not confirmed — entrance thought to be off Palmers Road)</label><input id="sDepot">
 <label>Depot lat,lon (for TomTom; optional)</label><input id="sDepotLL" placeholder="51.61,-0.13"><button class="b s" id="geoDepot">Find depot from address (TomTom)</button><label>Home lat,lon (stays on this phone)</label><input id="sHomeLL" placeholder="51.6,-0.1"><button class="b s" id="geoHome">Use my current location as home</button><p class="muted" id="geoMsg"></p>
 <label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">
-<div class="setup"><b>Your setup</b><label class="inl"><input type="checkbox" id="sLieOn" style="width:auto"> Lie-down at the depot before sign-on (Pacing)</label><label class="inl"><input type="checkbox" id="sHoursOn" style="width:auto"> Hours log and book-off capture</label></div><label>Lie-down at the depot before sign-on (minutes)</label><input id="sLie" type="number"><label>Spare covering: walk / book-on allowance after book-on (minutes)</label><input id="sAllow" type="number"><label>Spare covering: book-off allowance before spare finish (minutes)</label><input id="sBoAllow" type="number">
+<label>Lie-down at the depot before sign-on (minutes)</label><input id="sLie" type="number"><label>Spare covering: walk / book-on allowance after book-on (minutes)</label><input id="sAllow" type="number"><label>Spare covering: book-off allowance before spare finish (minutes)</label><input id="sBoAllow" type="number">
 <button class="b s" id="geoTest">Test location</button><pre id="geoTestOut" class="muted" style="white-space:pre-wrap"></pre><label>TomTom API key (optional, free tier — stays on this phone)</label><input id="sTT">
 
 <button class="b" id="saveSet">Save settings</button><p class="muted" id="setMsg"></p></div></section>
