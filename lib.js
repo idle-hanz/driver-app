@@ -5,7 +5,7 @@ export {pdfjs};
 const DBN='agr-driver',ST=['kv','pdfs'];
 const open=()=>new Promise((res,rej)=>{const r=indexedDB.open(DBN,1);r.onupgradeneeded=()=>ST.forEach(s=>r.result.createObjectStore(s));r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 async function tx(store,mode,fn){const db=await open();return new Promise((res,rej)=>{const t=db.transaction(store,mode),q=fn(t.objectStore(store));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error)})}
-export const idb={get:(s,k)=>tx(s,'readonly',o=>o.get(k)),put:(s,k,v)=>tx(s,'readwrite',o=>o.put(v,k)),clear:s=>tx(s,'readwrite',o=>o.clear()),keys:s=>tx(s,'readonly',o=>o.getAllKeys())};
+export const idb={get:(s,k)=>tx(s,'readonly',o=>o.get(k)),put:(s,k,v)=>tx(s,'readwrite',o=>o.put(v,k)),clear:s=>tx(s,'readwrite',o=>o.clear()),keys:s=>tx(s,'readonly',o=>o.getAllKeys()),del:(s,k)=>tx(s,'readwrite',o=>o.delete(k))};
 export async function wipe(){await idb.clear('kv');await idb.clear('pdfs')}
 function parseCsv(t){const rows=[];for(const line of t.replace(/^\uFEFF/,'').split(/\r?\n/)){if(!line.trim())continue;const c=[];let cur='',q=false;
  for(const ch of line){if(ch==='"')q=!q;else if(ch===','&&!q){c.push(cur);cur=''}else cur+=ch}c.push(cur);rows.push(c)}
@@ -109,3 +109,16 @@ export async function reparseIfOld(){const v=(await idb.get('kv','parserVersion'
  const files=[];for(const id of ids){const b=await idb.get('pdfs',id);if(b)files.push(new File([b],id,{type:'application/pdf'}))}
  // normal books first is not required; RC/compact keyed by notice, books keyed by id
  return importPdfs(files)}
+
+// ---- Delete old files: only items whose end date (from the files themselves) is before today, or a duty book replaced by a newer one already in force ----
+export async function oldFiles(today){const notices=(await idb.get('kv','notices'))||{},cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{},books=(await idb.get('kv','normal'))||[],pdfs=new Set(await idb.keys('pdfs')),out=[];
+ const keys=new Set([...Object.keys(notices),...Object.keys(cards),...Object.keys(compact)]);
+ for(const k of [...keys].sort()){const ds=((notices[k]||{}).dates||[]).filter(Boolean).sort();if(!ds.length)continue;const end=ds[ds.length-1];if(end>=today)continue;const id=k.replace('/','');
+  const files=[];if(notices[k])files.push({kind:'csv',label:`Notice ${k} (from CSV)`});if(pdfs.has('C-'+id+'.pdf'))files.push({kind:'pdf',id:'C-'+id+'.pdf',label:`Notice ${k} PDF`});if(pdfs.has('RC-'+id+'.pdf'))files.push({kind:'pdf',id:'RC-'+id+'.pdf',label:`Running cards ${k} PDF`});
+  out.push({type:'notice',key:k,dates:ds,end,files})}
+ for(const b of books){const newer=books.find(o=>o!==b&&o.from&&b.from&&o.from>b.from&&o.from<=today);if((b.until&&b.until<today)||newer)out.push({type:'book',key:b.pdf,timetable:b.timetable,from:b.from,until:b.until,why:newer?`replaced by book ${newer.timetable}`:'ended',files:[{kind:'pdf',id:b.pdf,label:`Duty book ${b.timetable}`}]})}
+ return out}
+export async function deleteOld(list){const notices=(await idb.get('kv','notices'))||{},cards=(await idb.get('kv','cards'))||{},compact=(await idb.get('kv','compact'))||{};let books=(await idb.get('kv','normal'))||[],n=0;
+ for(const it of list){for(const f of it.files){if(f.kind==='pdf')await idb.del('pdfs',f.id);n++}
+  if(it.type==='notice'){delete notices[it.key];delete cards[it.key];delete compact[it.key]}else books=books.filter(b=>b.pdf!==it.key)}
+ await idb.put('kv','notices',notices);await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','normal',books);return n}

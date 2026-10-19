@@ -1,4 +1,4 @@
-import {idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
+import {oldFiles,deleteOld,idb,wipe,importCsvs,importPdfs,loadData,renderPages,reparseIfOld} from './lib.js';
 const $=s=>document.querySelector(s),DAYS=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 // this app's localStorage keys; 'Clear my data' removes only these (other apps share this origin)
 const OWN_KEYS=['changes','covBack','covTravel','covering','duties','hours','lsLastNote','lsNotif','remDismiss','settings','spareOff','ttCache'];
@@ -474,3 +474,11 @@ function reliefOf(r,ps,i){const p=ps[i];if(!p)return null;const c=r.covering&&!r
  if(c&&i===ps.length-1)return{t:c.end.t,at:c.end.at,dir:c.end.rev?'Reverser':c.end.dir,getOff:true};
  if(!p.relief)return null;const s=(p.endAt||'').match(/ (E|W)$/);return{t:p.relief,at:p.endAt||'',dir:s?'':''}}
 const relTxt=x=>x?`${x.t} ${x.at?placeTxt(x.at,x.dir):'(place not on card)'}`:'';
+
+$('#delOld').onclick=async()=>{const t=todayISO(),list=await oldFiles(t),m=$('#delMsg'),f=d=>`${d.slice(8)}/${d.slice(5,7)}/${d.slice(2,4)}`;
+ if(!list.length){m.textContent='Nothing old to delete. Everything on this phone is current or future.';return}
+ const lines=list.map(it=>it.type==='notice'?`• Notice ${it.key} (${it.dates.map(f).join(', ')}): ${it.files.map(x=>x.kind==='csv'?'CSV data':/^RC-/.test(x.id)?'running cards PDF':'notice PDF').join(', ')}`:`• Duty book ${it.timetable} (${f(it.from)} to ${f(it.until)}), ${it.why}`);
+ const n=list.reduce((a,it)=>a+it.files.length,0);
+ m.innerHTML=`<b>Will delete ${n} file${n>1?'s':''}:</b><br>${lines.map(esc).join('<br>')}`;await new Promise(r=>setTimeout(r,50));
+ if(!confirm(`Delete ${n} old file${n>1?'s':''}?\n\n${lines.join('\n')}\n\nKept: everything current or future, your week, hours log and settings.`)){m.innerHTML+='<br><b>Nothing deleted.</b>';return}
+ const done=await deleteOld(list);await reload();summary();m.textContent=`Deleted ${done} file${done>1?'s':''}.`;weekView()};
