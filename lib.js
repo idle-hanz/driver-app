@@ -97,11 +97,32 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
  await idb.put('kv','cards',cards);await idb.put('kv','compact',compact);await idb.put('kv','parserVersion',PARSER_VERSION);return sum}
 export async function loadData(){const st=(await idb.get('kv','notices'))||{};
  return{normal:(await idb.get('kv','normal'))||[],notices:Object.values(st).filter(n=>n.status==='OK'||n.status==='PAST'),cards:(await idb.get('kv','cards'))||{},compact:(await idb.get('kv','compact'))||{}}}
-export async function renderPages(el,pdfName,pages,width,hl){const tok=(el._tok=(el._tok||0)+1);const blob=await idb.get('pdfs',pdfName);if(!blob){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
- const doc=await pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise;if(tok!==el._tok)return;el.innerHTML='';
- for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
-  const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;
-  if(hl){const x=c.getContext('2d'),top=(v0.height-hl.y-hl.hh*0.3)*sc,hgt=hl.hh*1.35*sc;x.fillStyle='rgba(255,220,0,0.35)';x.fillRect(0,top-hgt*0.75,c.width,hgt);x.strokeStyle='#e0a800';x.lineWidth=2*sc;x.strokeRect(1,top-hgt*0.75,c.width-2,hgt)}el.appendChild(c)}}
+// Duty sheet drawing. Kept robust because Android can wipe a canvas when the app is backgrounded or the screen locks
+// (2D canvas context loss), and memory pressure can make a render fail. The last request is remembered on the element so
+// ensureSheet() can redraw it; pdf.js documents are cached (max 2) and destroyed when evicted instead of leaking one per render.
+const docCache=new Map();
+async function openDoc(name,fresh){if(fresh&&docCache.has(name)){try{(await docCache.get(name)).destroy()}catch(e){}docCache.delete(name)}
+ if(!docCache.has(name)){const pr=(async()=>{const blob=await idb.get('pdfs',name);if(!blob)return null;return pdfjs.getDocument({data:new Uint8Array(await blob.arrayBuffer())}).promise})();docCache.set(name,pr);pr.catch(()=>docCache.delete(name));
+  while(docCache.size>2){const [k,v]=docCache.entries().next().value;docCache.delete(k);v.then(d=>d&&d.destroy()).catch(()=>{})}}
+ const d=await docCache.get(name);if(!d)docCache.delete(name);return d}
+export function dropDocs(){for(const v of docCache.values())v.then(d=>d&&d.destroy()).catch(()=>{});docCache.clear()}
+export async function renderPages(el,pdfName,pages,width,hl){el._sheet={pdfName,pages,width,hl};const tok=(el._tok=(el._tok||0)+1);
+ if(!el.querySelector('canvas.rc'))el.innerHTML='<p class="muted sheetwait">Loading duty sheet…</p>';
+ for(let attempt=0;attempt<2;attempt++){try{
+  const doc=await openDoc(pdfName,attempt>0);if(tok!==el._tok)return;if(!doc){el.innerHTML='<p class="err">Running card PDF not on this phone — import it in Settings.</p>';return}
+  const out=[];for(const p of pages){const page=await doc.getPage(p),v0=page.getViewport({scale:1}),sc=(width*(devicePixelRatio||1))/v0.width,v=page.getViewport({scale:sc});
+   const c=document.createElement('canvas');c.width=v.width;c.height=v.height;c.className='rc';await page.render({canvasContext:c.getContext('2d'),viewport:v}).promise;if(tok!==el._tok)return;
+   if(hl){const x=c.getContext('2d'),top=(v0.height-hl.y-hl.hh*0.3)*sc,hgt=hl.hh*1.35*sc;x.fillStyle='rgba(255,220,0,0.35)';x.fillRect(0,top-hgt*0.75,c.width,hgt);x.strokeStyle='#e0a800';x.lineWidth=2*sc;x.strokeRect(1,top-hgt*0.75,c.width-2,hgt)}
+   // a wiped canvas is redrawn as soon as the browser gives it back
+   c.addEventListener('contextlost',()=>{el._lost=true});c.addEventListener('contextrestored',()=>{el._lost=false;ensureSheet(el,true)});out.push(c)}
+  el.innerHTML='';out.forEach(c=>el.appendChild(c));el._lost=false;return}
+ catch(e){if(tok!==el._tok)return;if(attempt===1){sheetFail(el,e);return}}}}
+function sheetFail(el,e){el.innerHTML=`<p class="err">Could not draw the duty sheet${e&&e.message?' ('+String(e.message).slice(0,120).replace(/[<>&]/g,'')+')':''}.</p><button class="b" type="button">Show duty sheet</button>`;el.querySelector('button').onclick=()=>ensureSheet(el,true)}
+// Redraw the remembered sheet if the container is empty, lost its canvas, or force is set
+export function ensureSheet(el,force){const s=el&&el._sheet;if(!s)return false;const cs=[...el.querySelectorAll('canvas.rc')];
+ const bad=force||el._lost||!cs.length||cs.some(c=>!c.width||(c.getContext('2d').isContextLost&&c.getContext('2d').isContextLost()));if(!bad)return false;
+ renderPages(el,s.pdfName,s.pages,s.width,s.hl);return true}
+
 
 // Re-run the current parser over the PDFs already stored on this device (no re-import needed)
 export async function reparseIfOld(){const v=(await idb.get('kv','parserVersion'))||0;if(v>=PARSER_VERSION)return null;
