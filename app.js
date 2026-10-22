@@ -157,7 +157,7 @@ const CODE={AGR:'940GZZLUASG',CFS:'940GZZLUCKS',OAK:'940GZZLUOAK',SGT:'940GZZLUS
 const normV=v=>String(v||'').replace(/^0+/,'');let trTimer=null;
 const NOW=()=>{const q=new URLSearchParams(location.search).get('now');return q?new Date(q):new Date()};
 let trSel=null;
-async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#trains.on'))return;
+async function myTrains(){clearTimeout(trTimer);const out=$('#myTrains');if(!document.querySelector('#card.on'))return;
  const nowD=NOW(),now=+nowD,date=`${nowD.getFullYear()}-${String(nowD.getMonth()+1).padStart(2,'0')}-${String(nowD.getDate()).padStart(2,'0')}`,r=resolve(date);
  const head=`<p class="muted">Today ${DAYS[nowD.getDay()]} ${date.slice(8)}/${date.slice(5,7)}${r?' · '+(r.special?r.type:'duty '+esc(r.duty)+(r.covering&&!r.covering.missing?' covering '+esc(r.covering.duty):'')):''}</p>`;
  if(r&&(r.cover||r.spare)){out.innerHTML=head+`<p class="big">${r.cover?'Cover':'Spare'} duty ${esc(r.duty)}</p><p>No booked pick-up. Sign on ${r.times?r.times.sign_on:'—'} at AGR.</p>`;return}
@@ -322,7 +322,7 @@ function setView(){for(const[i,k]of Object.entries(SF))$('#'+i).value=S[k]}
 $('#saveSet').onclick=()=>{for(const[i,k]of Object.entries(SF))S[k]=$('#'+i).value.trim();LS.set('settings',S);$('#setMsg').textContent='Saved.'};
 function setHash(h){try{history.replaceState(null,'','#'+h)}catch(e){location.hash=h}}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>{if(b.dataset.t!=='card')setHash(b.dataset.t);document.querySelectorAll('nav button,section').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.t).classList.add('on');
- ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView()},trains:()=>{trSel=null;myTrains();lineStatus()},pace:()=>{paceView();tomorrowCard();lsRender()},hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:()=>{weekView();tomorrowCard();lsRender();remindersView()},_w:weekView})[b.dataset.t]()});
+ ({card:()=>{const fw=cardFromWeek;$('#cardDay').value=fw||todayISO();cardFromWeek=null;setHash(fw&&fw!==todayISO()?'card/'+fw:'card');cardView();trSel=null;myTrains();lineStatus()},pace:()=>{paceView();tomorrowCard();lsRender()},hours:()=>{hoursView();if(!$('#hDriven').value)hoursDefaults()},set:setView,week:()=>{weekView();tomorrowCard();lsRender();remindersView()},_w:weekView})[b.dataset.t]()});
 async function reload(){dropDocs();DATA=await loadData();summary();browseFill()}
 // ---- What changed after an import: compare parsed results for every entered day from this week on ----
 function daySnap(d){const r=resolve(d);if(!r)return null;const pk=r.card&&r.card.pickups&&r.card.pickups.length?r.card.pickups.map(p=>`${p.train} ${p.time} ${p.at}${p.rev?' (Reverser)':''}`).join(', '):null;
@@ -361,7 +361,7 @@ if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;nav
   if(Math.abs(dx)<60||Math.abs(dx)<=Math.abs(dy)*1.5||dt>600)return;const cur=document.querySelector('nav button.on').dataset.t,i=order.indexOf(cur)+(dx<0?1:-1);if(i<0||i>=order.length)return;
   const nb=document.querySelector(`nav button[data-t="${order[i]}"]`);if(order[i]==='card'&&cur==='week'){}nb.click();nb.scrollIntoView({inline:'nearest',block:'nearest'});
   const sec=$('#'+order[i]);sec.classList.remove('slide-l','slide-r');void sec.offsetWidth;sec.classList.add(dx<0?'slide-l':'slide-r')},{passive:true});})();
-// ---- Card tab: overscroll past bottom/top pages to next/previous day ----
+// ---- Card tab: pull down at the top for the previous day (pull-up at the bottom removed: it jumped to the next day and back to the top when drivers scrolled down to the trains) ----
 (function(){const cardOn=()=>{const b=document.querySelector('nav button.on');return b&&b.dataset.t==='card'};
  const sync=()=>document.documentElement.classList.toggle('cardtab',cardOn());new MutationObserver(sync).observe(document.querySelector('nav'),{subtree:true,attributes:true,attributeFilter:['class']});sync();
  const hint=document.createElement('div');hint.id='pageHint';hint.className='pagehint';document.body.appendChild(hint);
@@ -373,11 +373,10 @@ if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;nav
   s={y:e.touches[0].clientY,x:e.touches[0].clientX,t:Date.now(),bot:atBottom(),top:atTop()}},{passive:true});
  document.addEventListener('touchmove',e=>{if(!s)return;if(e.touches.length>1||zoomed()){s=null;hide();return}const dy=e.touches[0].clientY-s.y,dx=e.touches[0].clientX-s.x;
   if(Math.abs(dx)>Math.abs(dy)){hide();return}const d=$('#cardDay').value||todayISO();
-  if(dy<-20&&s.bot&&atBottom()){hint.textContent=`${-dy>80?'Release for':'Pull for'} ${lbl(addDay(d,1))} ›`;hint.className='pagehint show bottom'+(-dy>80?' ready':'')}
-  else if(dy>20&&s.top&&atTop()){hint.textContent=`‹ ${dy>80?'Release for':'Pull for'} ${lbl(addDay(d,-1))}`;hint.className='pagehint show top'+(dy>80?' ready':'')}else hide()},{passive:true});
+  if(dy>20&&s.top&&atTop()){hint.textContent=`‹ ${dy>80?'Release for':'Pull for'} ${lbl(addDay(d,-1))}`;hint.className='pagehint show top'+(dy>80?' ready':'')}else hide()},{passive:true});
  document.addEventListener('touchend',e=>{if(!s)return;const o=s;s=null;hide();if(e.touches.length||e.changedTouches.length!==1||zoomed())return;
   const dy=e.changedTouches[0].clientY-o.y,dx=e.changedTouches[0].clientX-o.x,dt=Date.now()-o.t;if(Math.abs(dy)<=80||Math.abs(dx)*1.5>Math.abs(dy)||dt>700)return;
-  let n=0;if(dy<0&&o.bot&&atBottom())n=1;else if(dy>0&&o.top&&atTop())n=-1;if(!n)return;pageCard(n)},{passive:true});
+  let n=0;if(dy>0&&o.top&&atTop())n=-1;if(!n)return;pageCard(n)},{passive:true});
  window.pageCard=n=>{const d=addDay($('#cardDay').value||todayISO(),n);$('#cardDay').value=d;setHash('card/'+d);cardView();se.scrollTop=0;
   const sec=$('#card');sec.classList.remove('slide-u','slide-d');void sec.offsetWidth;sec.classList.add(n>0?'slide-u':'slide-d')};})();
 

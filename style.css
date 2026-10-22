@@ -15,7 +15,8 @@ button.b{background:#dc241f;color:#fff;border:0;border-radius:8px;padding:12px 1
 .day{position:relative;cursor:pointer;padding-right:26px}.chev{position:absolute;right:4px;top:50%;transform:translateY(-50%);font-size:28px;color:#8fa3d8}.day:active{background:#1f2a5c}
 @keyframes sl{from{transform:translateX(40px);opacity:.4}to{transform:none;opacity:1}}@keyframes sr{from{transform:translateX(-40px);opacity:.4}to{transform:none;opacity:1}}
 section.slide-l{animation:sl .18s ease-out}section.slide-r{animation:sr .18s ease-out}@media (prefers-reduced-motion:reduce){section.slide-l,section.slide-r{animation:none}}
-html,body{overscroll-behavior-x:none}
+html,body{overscroll-behavior:none}
+#cardTrains{margin-top:16px}.trainsh{font-size:18px;margin:8px 0}
 html.cardtab,html.cardtab body{overscroll-behavior-y:contain}
 .pagehint{position:fixed;left:50%;transform:translateX(-50%);z-index:50;background:#223;color:#fff;padding:6px 14px;border-radius:16px;font-size:14px;opacity:0;pointer-events:none;transition:opacity .1s}
 .pagehint.show{opacity:.75}.pagehint.ready{opacity:1;background:#0019a8}.pagehint.bottom{bottom:16px}.pagehint.top{top:60px}
