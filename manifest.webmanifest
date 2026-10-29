@@ -25,5 +25,24 @@
    "type": "image/png",
    "purpose": "maskable"
   }
- ]
+ ],
+ "share_target": {
+  "action": "/driver-app/share",
+  "method": "POST",
+  "enctype": "multipart/form-data",
+  "params": {
+   "title": "title",
+   "text": "text",
+   "files": [
+    {
+     "name": "pdfs",
+     "accept": [
+      "application/pdf",
+      ".pdf",
+      "application/octet-stream"
+     ]
+    }
+   ]
+  }
+ }
 }
