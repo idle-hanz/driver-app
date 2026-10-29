@@ -33,14 +33,16 @@ export function mapWdsCode(tok){const t=String(tok||'').trim().toUpperCase();if(
  if(/^\d{3}[A-Z0-9]?$/.test(t))return{code:t.slice(0,3),flag:''};
  if(t==='NOT'||t==='ASSIGNED')return{code:'',flag:'Not assigned'};
  return{code:'',flag:t.replace(/^\?\?/,'')}}
-/** Find this driver's week. staffNo is the 8-digit number saved in Settings. Returns duties only — no names. */
-export function findWdsRow(pages,staffNo){const want=String(staffNo||'').replace(/\D/g,'');if(!/^\d{8}$/.test(want))return{err:'staff'};
+/** Normalise staff numbers so 7 digits match an 8-digit PDF value with a leading 0. */
+export function normStaff(n){const d=String(n||'').replace(/\D/g,'');if(!/^\d{7,8}$/.test(d))return'';return d.replace(/^0+/,'')||'0'}
+/** Find this driver's week. staffNo is 7 or 8 digits (leading 0 optional). Returns duties only — no names. */
+export function findWdsRow(pages,staffNo){const want=normStaff(staffNo);if(!want)return{err:'staff'};
  const lines=pages.flat().map(l=>String(l||'').replace(/\s+/g,' ').trim()).filter(Boolean);
  let dates=null,weekEnding=null;
  for(let i=0;i<lines.length;i++){const l=lines[i];
   if(/WEEK ENDING:\s*\d{2}\.\d{2}\.\d{4}/.test(l)){const m=l.match(/WEEK ENDING:\s*(\d{2})\.(\d{2})\.(\d{4})/);if(m)weekEnding=`${m[3]}-${m[2]}-${m[1]}`}
   if(/^Employee\b/.test(l)&&/\d{2}\.\d{2}\.\d{4}/.test(l)){dates=[...l.matchAll(/(\d{2})\.(\d{2})\.(\d{4})/g)].map(m=>`${m[3]}-${m[2]}-${m[1]}`)}
-  const sm=l.match(/^(\d{8})\b/);if(!sm||sm[1]!==want)continue;
+  const sm=l.match(/^(\d{7,8})\b/);if(!sm||normStaff(sm[1])!==want)continue;
   if(!dates||dates.length!==7)return{err:'dates'};
   const prev=lines[i-1]||'';const rm=prev.match(/^(\d{3})\s+(.+)$/)||prev.match(/^(\d{3})$/);
   if(!rm)return{err:'row'};

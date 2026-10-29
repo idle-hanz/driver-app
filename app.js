@@ -378,18 +378,18 @@ async function fillFromRosterFile(file){const box=$('#rosterBox');
  if(/\.(png|jpe?g|webp|gif|heic)$/i.test(file.name)||(/^image\//.test(file.type)&&!/pdf/i.test(file.type))){
   if(box){box.hidden=false;box.innerHTML=`<b>Photos not supported yet</b><p class="muted">Use the Weekly Display Sheet PDF for now. On-device photo reading is on the to-do list.</p><button class="b s" type="button" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}
   else toast('Photos not supported yet — use the PDF');return}
- const sn=staffNo();if(!/^\d{8}$/.test(sn)){toast('Save your 8-digit staff number in Settings first');document.querySelector('nav button[data-t=set]')?.click();return}
+ const sn=staffNo();if(!/^\d{7,8}$/.test(sn)){toast('Save your staff number (7 or 8 digits) in Settings first');document.querySelector('nav button[data-t=set]')?.click();return}
  if(box){box.hidden=false;box.innerHTML=`<p class="muted">Reading roster…</p>`}
  try{const pages=await readPdfPages(file,m=>{if(box)box.innerHTML=`<p class="muted">Reading roster (${esc(m)})…</p>`});
   if(!looksLikeWds(pages)){if(box){box.hidden=false;box.innerHTML=`<p class="err">That file doesn't look like a Weekly Display Sheet.</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
   const row=findWdsRow(pages,sn);
-  if(row.err==='staff'){toast('Save your 8-digit staff number in Settings first');return}
+  if(row.err==='staff'){toast('Save your staff number (7 or 8 digits) in Settings first');return}
   if(row.err==='missing'){if(box){box.hidden=false;box.innerHTML=`<p class="err">No row matched your staff number on this roster.</p><p class="muted">Check the number in Settings. The roster PDF is not kept on this phone.</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
   if(!row.ok){if(box){box.hidden=false;box.innerHTML=`<p class="err">Could not read your row (${esc(row.err)}).</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}return}
   showRosterConfirm(row,file.name||'roster PDF')}
  catch(e){if(box){box.hidden=false;box.innerHTML=`<p class="err">Could not read that file: ${esc(e&&e.message||e)}</p><button class="b s" id="rosterCancel">OK</button>`;$('#rosterCancel').onclick=()=>{box.hidden=true;box.innerHTML=''}}}}
 
-const APP_VERSION='agr-v42';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
+const APP_VERSION='agr-v43';{const v=document.getElementById('appVer');if(v){v.textContent='App version '+APP_VERSION;if(window.caches)caches.keys().then(k=>{v.textContent+=' · offline copy '+(k.filter(x=>/^agr-v/.test(x)).join(', ')||'none yet')})}}
 if('serviceWorker'in navigator){let had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>{r.update();document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')r.update()})});navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had)location.reload();had=true})}
 // ---- Swipe between tabs (follows the top menu order) ----
 (function(){const order=[...document.querySelectorAll('nav button')].map(b=>b.dataset.t);let s=null;
