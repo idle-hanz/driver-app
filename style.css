@@ -39,3 +39,9 @@ table.brk tr.early td{opacity:.3}table.brk tr.tap{cursor:pointer}table.brk tr.ou
 .rem{display:flex;gap:8px;align-items:center;justify-content:space-between;background:#3b2a10;border:1px solid #c98a2b;color:#ffe2b0;border-radius:10px;padding:6px 10px;margin:6px 0}.rem .b{flex:none}
 .getoff{font-size:1.1em}.getoffTag{background:#c62828;color:#fff}tr.tail td{background:#123a1f;color:#cfe9d4;font-weight:600}.tback{margin:4px 0}
 .relief{margin-top:4px;font-size:1.05em}
+
+.rostergrid{display:grid;grid-template-columns:auto 1fr auto;gap:4px 10px;align-items:center;margin:8px 0}
+.rostergrid .flag{color:#a60;font-size:.9em}
+.rosterbox{border:2px solid #4a7bd0;border-radius:10px;padding:10px;margin:10px 0}
+
+.vh{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}

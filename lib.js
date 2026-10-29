@@ -24,6 +24,43 @@ async function pageLines(page){const tc=await page.getTextContent(),rows=[];
  for(const it of tc.items){if(!it.str.trim())continue;const y=it.transform[5],x=it.transform[4];let r=rows.find(r=>Math.abs(r.y-y)<3);if(!r)rows.push(r={y,hh:0,items:[]});r.hh=Math.max(r.hh,it.height||0);r.items.push({x,w:it.width,s:it.str})}
  rows.sort((a,b)=>b.y-a.y);const out=rows.map(r=>r.items.sort((a,b)=>a.x-b.x).reduce((o,i,k,a)=>o+(k&&i.x-(a[k-1].x+a[k-1].w)>1?' ':'')+i.s,'').replace(/\s+/g,' ').trim());
  out.hl=rows.map(r=>({y:r.y,hh:r.hh||10}));out.ph=page.view[3];return out}
+// ---- Weekly Display Sheet (TCOP roster) — parse on the phone, keep only this driver's duties ----
+// The PDF lists every driver. We never store the PDF, never keep names, and never keep anyone else's staff number.
+export function looksLikeWds(pages){return pages.flat().some(l=>/WEEKLY DISPLAY SHEET/i.test(l))}
+export function mapWdsCode(tok){const t=String(tok||'').trim().toUpperCase();if(!t)return{code:'',flag:'empty'};
+ if(t==='R'||t==='RD'||t==='REST')return{code:'RD',flag:''};
+ if(t==='**AL'||t==='AL'||/^\*\*AL/.test(t))return{code:'AL',flag:''};
+ if(/^\d{3}[A-Z0-9]?$/.test(t))return{code:t.slice(0,3),flag:''};
+ if(t==='NOT'||t==='ASSIGNED')return{code:'',flag:'Not assigned'};
+ return{code:'',flag:t.replace(/^\?\?/,'')}}
+/** Find this driver's week. staffNo is the 8-digit number saved in Settings. Returns duties only — no names. */
+export function findWdsRow(pages,staffNo){const want=String(staffNo||'').replace(/\D/g,'');if(!/^\d{8}$/.test(want))return{err:'staff'};
+ const lines=pages.flat().map(l=>String(l||'').replace(/\s+/g,' ').trim()).filter(Boolean);
+ let dates=null,weekEnding=null;
+ for(let i=0;i<lines.length;i++){const l=lines[i];
+  if(/WEEK ENDING:\s*\d{2}\.\d{2}\.\d{4}/.test(l)){const m=l.match(/WEEK ENDING:\s*(\d{2})\.(\d{2})\.(\d{4})/);if(m)weekEnding=`${m[3]}-${m[2]}-${m[1]}`}
+  if(/^Employee\b/.test(l)&&/\d{2}\.\d{2}\.\d{4}/.test(l)){dates=[...l.matchAll(/(\d{2})\.(\d{2})\.(\d{4})/g)].map(m=>`${m[3]}-${m[2]}-${m[1]}`)}
+  const sm=l.match(/^(\d{8})\b/);if(!sm||sm[1]!==want)continue;
+  if(!dates||dates.length!==7)return{err:'dates'};
+  const prev=lines[i-1]||'';const rm=prev.match(/^(\d{3})\s+(.+)$/)||prev.match(/^(\d{3})$/);
+  if(!rm)return{err:'row'};
+  const raw=(rm[2]||'').trim()?rm[2].trim().split(/\s+/):[];
+  // Pad / trim to 7 day slots; ignore a trailing 'Not' 'assigned' pair by collapsing
+  let toks=raw.slice();
+  if(toks.length>7){const flat=[];for(let k=0;k<toks.length;k++){if(toks[k]==='Not'&&toks[k+1]==='assigned'){flat.push('UNAV');k++}else flat.push(toks[k])}toks=flat}
+  while(toks.length<7)toks.push('');
+  toks=toks.slice(0,7);
+  const days=toks.map((t,di)=>{const m=mapWdsCode(t);return{date:dates[di],raw:t,code:m.code,flag:m.flag}});
+  // Never return name, never return other staff numbers, never return the matched staff number in clear form beyond confirmation that it matched
+  return{ok:true,rota:rm[1],weekEnding:weekEnding||dates[6],dates,days}}
+ return{err:'missing'}}
+export async function readPdfPages(file,progress){const buf=await file.arrayBuffer(),head=new TextDecoder().decode(new Uint8Array(buf.slice(0,5)));
+ if(head!=='%PDF-')throw new Error('not a PDF');
+ const doc=await pdfjs.getDocument({data:new Uint8Array(buf.slice(0))}).promise,pages=[];
+ try{for(let i=1;i<=doc.numPages;i++){progress&&progress(`page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}}
+ finally{try{await doc.destroy()}catch(e){}}
+ return pages}
+
 const PLACE=/^(\d{3}) (\d\d:\d\d)(?::? ?\d\d)? ([A-Z]{2,4}(?: (?:E|W|SG|DT|\d)(?:E|W)?\b)?)/;
 export function meals(lines){const out=[],seen=new Set();for(const m of lines.join('\n').matchAll(/Meal\s+Relief\s+(\d\d:\d\d)\s+to\s+(\d\d:\d\d)\s+at\s+([A-Z][A-Za-z ]{1,20}?)(?=\s{2,}|\s*$|\s+\d|\n)/gim)){const k=m[1]+m[2];if(seen.has(k))continue;seen.add(k);out.push({from:m[1],to:m[2],at:m[3].trim()})}return out}
 // Every timing point (time + place) in a trip block, in card order: departures and arrivals, e.g. 10:29 CFS, 10:49 AGR W
@@ -84,6 +121,7 @@ export async function importPdfs(files,progress){const cards=(await idb.get('kv'
   const blob=new Blob([buf],{type:'application/pdf'}),doc=await pdfjs.getDocument({data:new Uint8Array(buf.slice(0))}).promise;
   const pages=[];for(let i=1;i<=doc.numPages;i++){progress&&progress(`${f.name}: page ${i}/${doc.numPages}`);pages.push(await pageLines(await doc.getPage(i)))}
   await doc.destroy();
+  if(looksLikeWds(pages)){sum.wds=(sum.wds||[]).concat(f.name);continue}
   if(looksLikeDutyBook(f.name,pages)){const nb=parseDutyBook(f.name,pages);nb.pdf='NORMAL-'+(nb.timetable||'book')+'.pdf';await idb.put('pdfs',nb.pdf,blob);
    const books=((await idb.get('kv','normal'))||[]).filter(b=>b.pdf!==nb.pdf&&!(nb.timetable&&b.timetable===nb.timetable)&&!(nb.from&&b.from&&b.from<=nb.until&&nb.from<=b.until));/* a replacement book supersedes overlapping ones */books.push(nb);await idb.put('kv','normal',books);sum.pdfs++;
    const types=[...new Set(nb.duties.filter(d=>!d.cover).map(d=>d.dt))],nc=nb.duties.filter(d=>d.cover).length;sum.normal=(sum.normal||[]).concat(`Normal duty book${nb.timetable?' '+nb.timetable:''}: ${nb.duties.length-nc} duty cards + ${nc} cover duties (${[...new Set(nb.duties.filter(d=>d.cover).map(d=>d.dt))].join(', ')}), day types ${types.join(', ')}${nb.from?` (valid ${nb.from} to ${nb.until})`:''}`);continue}

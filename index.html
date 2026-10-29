@@ -5,6 +5,9 @@
 <main>
 <section id="week" class="on"><div id="lsW"></div><div id="remW"></div><div id="tmrW"></div><div class="card"><label for="wk">Week ending (Saturday)</label><div class="wkrow"><button class="b s" id="wkPrev" aria-label="Previous week">‹</button><select id="wk"></select><button class="b s" id="wkNext" aria-label="Next week">›</button></div><button class="b s" id="wkNow">This week</button>
 <div id="days"></div><button class="b" id="saveWeek">Save week</button>
+<p style="margin-top:10px"><button class="b s" id="rosterBtn" type="button">Fill week from roster</button>
+<input type="file" id="fRoster" accept="application/pdf,.pdf,image/*" class="vh"></p>
+<div id="rosterBox" class="rosterbox" hidden></div>
 
 <p class="muted" id="wkMsg"></p></div></section>
 <section id="card"><div class="card"><input type="hidden" id="cardDay"><div id="cardHead"></div><div id="cardInfo"></div><details id="browse"><summary>Look up any running card on this phone</summary><label>Notice</label><select id="bNotice"></select><label>Duty</label><select id="bDuty"></select></details></div><div id="cardPages"></div><div id="cardTrains"><h2 class="trainsh">Trains</h2><div id="lineStatus" class="muted"></div><div class="card" id="myTrains"></div><p class="muted">Live TfL data, information only. Your pick-up time is always the booked time on the running card. Updates every 30 s.</p>
@@ -21,6 +24,7 @@
 <label>Or notice CSVs: notice_pack.csv and P26-xxx.csv (select several)</label><input type="file" id="fCsv" multiple>
 <label>Duty book PDFs: RC-P26xxx-AGR.pdf <b>and</b> P26xxx-AGR.pdf (select several — Ctrl+A in the file window)</label><input type="file" id="fPdf" multiple>
 <p class="muted" id="impMsg"></p><div id="changes"></div><p class="muted" id="dataSummary"></p><button class="b s" id="delOld">Delete old files</button> <span class="muted" id="delMsg"></span><br><button class="b s" id="clearData">Clear my data</button><p class="muted" id="appVer"></p></div><div class="card"><b>Line status</b><p class="muted">The app checks TfL line status when you open it, when you come back to it, and every 3 minutes while it is open on a work day. It cannot check when the app is closed: phones stop web apps running in the background, so don't rely on notifications to wake you.</p><button class="b s" id="lsNotif">Turn on line status notifications</button><p class="muted" id="lsNotifMsg"></p></div><div class="card">
+<label for="sStaff">My staff number (stays on this phone)</label><input id="sStaff" inputmode="numeric" autocomplete="off" maxlength="8" placeholder="8 digits"><p class="muted">Used only to find your own row on a Weekly Display Sheet. Names are never stored.</p>
 <label>Depot address / destination for Maps (not confirmed — entrance thought to be off Palmers Road)</label><input id="sDepot">
 <label>Depot lat,lon (for TomTom; optional)</label><input id="sDepotLL" placeholder="51.61,-0.13"><button class="b s" id="geoDepot">Find depot from address (TomTom)</button><label>Home lat,lon (stays on this phone)</label><input id="sHomeLL" placeholder="51.6,-0.1"><button class="b s" id="geoHome">Use my current location as home</button><p class="muted" id="geoMsg"></p>
 <label>Usual journey time (minutes)</label><input id="sJourney" type="number"><label>Safety margin (minutes)</label><input id="sMargin" type="number">
